@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Helper: แปลงค่าเป็น float แบบปลอดภัย
+# Helper: แปลงค่าเป็น float แบบปลอดภัย (รองรับ dict/list จาก API)
 def safe_float(val, default=0.0):
     try:
         if isinstance(val, (int, float)):
@@ -50,7 +50,7 @@ config = {
     "refresh_interval": get_env("REFRESH_INTERVAL", 60, int),
     "alerts": {
         "worker_offline": get_env("ALERT_WORKER_OFFLINE", True, bool),
-        "min_balance": get_env("ALERT_MIN_BALANCE", 0.01, float),
+        "payment_alert": get_env("ALERT_ON_PAYMENT", True, bool),
         "hashrate_drop_percent": get_env("HASHRATE_DROP_PERCENT", 50, float),
     },
     "notifications": {
@@ -78,7 +78,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="2.0.1")
+app = FastAPI(title="zpool Monitor", version="2.1.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -88,6 +88,7 @@ state = {
     "payments": [],
     "max_hashrate": 0,
     "last_alert_sent": {},
+    "last_payment_time": 0,
     "history": [],
     "start_time": datetime.now()
 }
@@ -234,6 +235,7 @@ async def check_alerts(stats: dict):
     alerts_cfg = config["alerts"]
     currency = stats.get("currency", "BTC")
     
+    # 1. Worker Offline
     if alerts_cfg["worker_offline"] and stats.get("worker", 0) == 0:
         await send_alert(
             "WARNING: No Workers Online",
@@ -241,14 +243,29 @@ async def check_alerts(stats: dict):
             "warning"
         )
     
-    balance = stats.get("balance", 0)
-    if balance >= alerts_cfg["min_balance"]:
-        await send_alert(
-            "INFO: Balance Goal Reached",
-            f"Balance: {balance:.8f} {currency}\nTarget: {alerts_cfg['min_balance']} {currency}",
-            "info"
-        )
+    # 2. Payment Alert - เช็คเมื่อมี payment ใหม่
+    if alerts_cfg["payment_alert"]:
+        payments = stats.get("payouts", [])
+        if payments:
+            latest_payment = max(payments, key=lambda p: p.get("time", 0))
+            latest_time = latest_payment.get("time", 0)
+            
+            if latest_time > state["last_payment_time"]:
+                amount = latest_payment.get("amount", 0)
+                txid = latest_payment.get("txid", "N/A")
+                short_txid = txid[:16] + "..." if len(txid) > 16 else txid
+                
+                await send_alert(
+                    "PAYMENT RECEIVED",
+                    f"Amount: {amount:.8f} {currency}\n"
+                    f"TXID: {short_txid}\n"
+                    f"Time: {datetime.fromtimestamp(latest_time).strftime('%d/%m/%Y %H:%M:%S')}",
+                    "info"
+                )
+                
+                state["last_payment_time"] = latest_time
     
+    # 3. Hashrate Dropped
     hr = stats.get("hashrate", 0)
     if state["max_hashrate"] > 0 and hr > 0:
         drop_percent = ((state["max_hashrate"] - hr) / state["max_hashrate"]) * 100

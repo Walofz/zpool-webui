@@ -148,7 +148,7 @@
         </div>
 
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v2.0.2 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v2.1.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -228,10 +228,7 @@
                 const workersStatus = document.getElementById('workers-status');
                 const workerUpdate = document.getElementById('worker-update');
                 
-                if (!list || !workersStatus || !workerUpdate) {
-                    console.error('Elements not found:', { list: !!list, workersStatus: !!workersStatus, workerUpdate: !!workerUpdate });
-                    return;
-                }
+                if (!list || !workersStatus || !workerUpdate) return;
                 
                 if (!data || Object.keys(data).length === 0) {
                     list.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
@@ -369,7 +366,7 @@
                 html += `<div class="p-2 ${cfg.notifications.ntfy.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
                     <div>ntfy</div><div class="text-xs ${cfg.notifications.ntfy.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.ntfy.enabled ? 'Enabled' : 'Disabled'}</div></div>`;
                 html += `<div class="p-2 bg-blue-500/10 rounded"><div>Worker Offline</div><div class="text-xs text-blue-400">${cfg.alerts.worker_offline ? 'Active' : 'Off'}</div></div>`;
-                html += `<div class="p-2 bg-blue-500/10 rounded"><div>Balance Goal</div><div class="text-xs text-blue-400">>= ${cfg.alerts.min_balance}</div></div>`;
+                html += `<div class="p-2 bg-blue-500/10 rounded"><div>Payment Alert</div><div class="text-xs text-blue-400">${cfg.alerts.payment_alert ? 'Active' : 'Off'}</div></div>`;
                 el.innerHTML = html;
             } catch (e) { console.error('Config error:', e); }
         }
