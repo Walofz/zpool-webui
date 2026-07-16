@@ -47,6 +47,8 @@ config = {
             "enabled": get_env("NTFY_ENABLED", False, bool),
             "topic": get_env("NTFY_TOPIC", ""),
             "server": get_env("NTFY_SERVER", "https://ntfy.sh"),
+            "user": get_env("NTFY_USER", ""),       # <-- เพิ่ม
+            "pass": get_env("NTFY_PASS", ""),       # <-- เพิ่ม
         }
     }
 }
@@ -61,7 +63,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.1.0")
+app = FastAPI(title="zpool Monitor", version="1.1.1")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -78,7 +80,6 @@ state = {
 
 ZPOOL_API = "https://www.zpool.ca/api"
 
-# Browser-like headers to bypass Cloudflare basic checks
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     "Accept": "application/json"
@@ -86,13 +87,11 @@ HEADERS = {
 
 
 async def fetch_zpool_stats() -> dict:
-    """ดึงข้อมูลหลักจาก walletEX (endpoint ที่ถูกต้องของ zpool.ca)"""
     async with httpx.AsyncClient(timeout=10, headers=HEADERS) as client:
         url = f"{ZPOOL_API}/walletEX"
         params = {"address": config["wallet"]}
         r = await client.get(url, params=params)
         
-        # ตรวจสอบว่าเป็น JSON จริงๆ หรือไม่ (ป้องกัน Cloudflare HTML block)
         content_type = r.headers.get("content-type", "")
         if "application/json" not in content_type:
             logger.error(f"❌ API did not return JSON! Content-Type: {content_type}")
@@ -106,14 +105,14 @@ async def fetch_zpool_stats() -> dict:
         worker_count = len(miners)
         
         return {
-            "currency": "BTC",  # zpool จ่ายเป็น BTC โดย default
+            "currency": "BTC",
             "address": config["wallet"],
             "unsold": float(data.get("unsold", 0)),
             "balance": float(data.get("balance", 0)),
             "unpaid": float(data.get("unpaid", 0)),
             "paid24h": float(data.get("paid24h", 0)),
             "total_paid": float(data.get("total", 0)),
-            "hashrate": 0,  # zpool wallet API ไม่ค่อย return hashrate ของ user โดยตรง
+            "hashrate": 0,
             "worker": worker_count,
             "estimate": 0,
             "miners": miners,
@@ -122,7 +121,6 @@ async def fetch_zpool_stats() -> dict:
 
 
 async def fetch_blocks_found() -> list:
-    """ดึงประวัติ blocks"""
     async with httpx.AsyncClient(timeout=10, headers=HEADERS) as client:
         r = await client.get(f"{ZPOOL_API}/blocks")
         if "application/json" not in r.headers.get("content-type", ""):
@@ -162,16 +160,33 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
         return
     server = config["notifications"]["ntfy"]["server"]
     topic = config["notifications"]["ntfy"]["topic"]
+    user = config["notifications"]["ntfy"]["user"]
+    password = config["notifications"]["ntfy"]["pass"]
+    
     if not topic:
         return
+
+    # ✅ แก้ปัญหา ASCII encoding โดยระบุ charset=utf-8 ชัดเจน
     headers = {
         "Title": title,
         "Priority": str(priority),
-        "Tags": "warning" if priority >= 4 else "info"
+        "Tags": "warning" if priority >= 4 else "info",
+        "Content-Type": "text/plain; charset=utf-8" 
     }
+
+    # ✅ เตรียม Basic Auth ถ้ามี user และ pass
+    auth_tuple = (user, password) if user and password else None
+
     try:
         async with httpx.AsyncClient() as client:
-            await client.post(f"{server}/{topic}", data=message.encode('utf-8'), headers=headers, timeout=10)
+            # ✅ ใช้ content=message โดยตรง httpx จะจัดการ encode utf-8 ให้เองอย่างถูกต้อง
+            await client.post(
+                f"{server}/{topic}",
+                content=message,
+                headers=headers,
+                auth=auth_tuple,
+                timeout=10
+            )
         logger.info(f"✅ ntfy sent: {title}")
     except Exception as e:
         logger.error(f"❌ ntfy error: {e}")
@@ -180,7 +195,7 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
 async def send_alert(title: str, message: str, alert_type: str = "warning"):
     now = datetime.utcnow().timestamp()
     last = state["last_alert_sent"].get(alert_type, 0)
-    if now - last < 300:  # anti-spam 5 นาที
+    if now - last < 300:
         return
     state["last_alert_sent"][alert_type] = now
     
@@ -212,13 +227,12 @@ async def check_alerts(stats: dict):
 
 
 async def background_poller():
-    await asyncio.sleep(2)  # wait for startup
+    await asyncio.sleep(2)
     while True:
         try:
             stats = await fetch_zpool_stats()
             state["stats"] = stats
             
-            # Map miners to workers format for frontend
             state["workers"] = {"SHA-256": stats.get("miners", [])}
             state["payments"] = stats.get("payouts", [])
             
@@ -299,7 +313,10 @@ async def api_config():
         "alerts": config["alerts"],
         "notifications": {
             "discord": {"enabled": config["notifications"]["discord"]["enabled"]},
-            "ntfy": {"enabled": config["notifications"]["ntfy"]["enabled"]}
+            "ntfy": {
+                "enabled": config["notifications"]["ntfy"]["enabled"],
+                "has_auth": bool(config["notifications"]["ntfy"]["user"]) # ไม่โชว์ pass
+            }
         }
     }
 
