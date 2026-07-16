@@ -64,7 +64,10 @@
         <div class="card mb-8">
             <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
                 <h3 class="text-lg font-semibold">Workers</h3>
-                <span class="text-sm text-gray-400">Last: <span id="worker-update">-</span></span>
+                <div class="text-sm text-gray-400">
+                    <span id="workers-status">0 online</span> • 
+                    Last: <span id="worker-update">-</span>
+                </div>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-sm">
@@ -145,7 +148,7 @@
         </div>
 
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v2.0.1 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v2.0.2 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -225,7 +228,10 @@
                 const workersStatus = document.getElementById('workers-status');
                 const workerUpdate = document.getElementById('worker-update');
                 
-                if (!list || !workersStatus || !workerUpdate) return;
+                if (!list || !workersStatus || !workerUpdate) {
+                    console.error('Elements not found:', { list: !!list, workersStatus: !!workersStatus, workerUpdate: !!workerUpdate });
+                    return;
+                }
                 
                 if (!data || Object.keys(data).length === 0) {
                     list.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
@@ -368,9 +374,7 @@
             } catch (e) { console.error('Config error:', e); }
         }
 
-        // ✅ รอ DOM โหลดเสร็จก่อน
         document.addEventListener('DOMContentLoaded', function() {
-            console.log('DOM Loaded - Starting...');
             updateStats();
             updateWorkers();
             updatePayments();
