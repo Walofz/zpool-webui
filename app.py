@@ -2,12 +2,21 @@ import asyncio
 import logging
 import os
 from datetime import datetime
+import sys
+import io
+
 
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import uvicorn
+
+if sys.stdout.encoding != 'utf-8':
+    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
+if sys.stderr.encoding != 'utf-8':
+    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+os.environ['PYTHONIOENCODING'] = 'utf-8'
 
 # Setup logging
 logging.basicConfig(
