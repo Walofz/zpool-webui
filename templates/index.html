@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="th">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -152,27 +152,42 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.7.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.7.1 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
     <script>
+        // ✅ ✅ ✅ แก้ปัญหา AM/PM ถาวร: คำนวณเวลา UTC+7 แบบ Manual 100% ✅ ✅ ✅
+        function getBangkokTime(date) {
+            // แปลงเป็น UTC ก่อน แล้วบวก 7 ชั่วโมง
+            const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+            return new Date(utc + (3600000 * 7));
+        }
+
         function formatDateTime(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-            return date.toLocaleString('th-TH', {
-                timeZone: 'Asia/Bangkok',
-                year: 'numeric', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
-            });
+            const bkk = getBangkokTime(date);
+            
+            const d = String(bkk.getDate()).padStart(2, '0');
+            const m = String(bkk.getMonth() + 1).padStart(2, '0');
+            const y = bkk.getFullYear();
+            const h = String(bkk.getHours()).padStart(2, '0');
+            const min = String(bkk.getMinutes()).padStart(2, '0');
+            const s = String(bkk.getSeconds()).padStart(2, '0');
+            
+            return `${d}/${m}/${y} ${h}:${min}:${s}`;
         }
 
         function formatTimeShort(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
-            return date.toLocaleString('th-TH', {
-                timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false
-            });
+            const bkk = getBangkokTime(date);
+            
+            const h = String(bkk.getHours()).padStart(2, '0');
+            const min = String(bkk.getMinutes()).padStart(2, '0');
+            
+            return `${h}:${min}`;
         }
 
         function formatLargeNumber(num) {
@@ -269,11 +284,9 @@
                 
                 document.querySelectorAll('.currency-unit').forEach(el => el.textContent = currency);
 
-                // ✅ แสดง Total SPM
                 const totalSPM = d.spm || 0;
                 document.getElementById('total-spm').textContent = totalSPM.toFixed(1);
                 
-                // ✅ แสดง Max SPM
                 const maxSPM = d.max_spm || 0;
                 document.getElementById('max-spm').textContent = maxSPM.toFixed(1);
 
@@ -322,18 +335,14 @@
                 document.getElementById('chart-spm-info').textContent = `${history.length} data points`;
                 document.getElementById('chart-bal-info').textContent = `${history.length} data points`;
                 
-                if (history.length === 0) {
-                    return;
-                }
+                if (history.length === 0) return;
                 
                 const labels = history.map(h => formatTimeShort(h.time));
                 
-                // ✅ SPM Chart
                 spmChart.data.labels = labels;
                 spmChart.data.datasets[0].data = history.map(h => h.spm || 0);
                 spmChart.update('none');
                 
-                // Balance Chart
                 balanceChart.data.labels = labels;
                 balanceChart.data.datasets[0].data = history.map(h => h.balance || 0);
                 balanceChart.update('none');
