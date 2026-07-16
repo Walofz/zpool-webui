@@ -166,28 +166,53 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
     if not topic:
         return
 
-    # ✅ แก้ปัญหา ASCII encoding โดยระบุ charset=utf-8 ชัดเจน
+    # ✅ บังคับใช้ UTF-8 อย่างชัดเจน
     headers = {
         "Title": title,
         "Priority": str(priority),
-        "Tags": "warning" if priority >= 4 else "info",
-        "Content-Type": "text/plain; charset=utf-8" 
+        "Tags": "warning" if priority >= 4 else "info"
     }
 
-    # ✅ เตรียม Basic Auth ถ้ามี user และ pass
+    # ✅ เตรียม auth
     auth_tuple = (user, password) if user and password else None
 
     try:
         async with httpx.AsyncClient() as client:
-            # ✅ ใช้ content=message โดยตรง httpx จะจัดการ encode utf-8 ให้เองอย่างถูกต้อง
+            # ✅ บังคับ encode เป็น UTF-8 และส่งเป็น bytes
             await client.post(
                 f"{server}/{topic}",
-                content=message,
+                content=message.encode('utf-8'),  # บังคับ encode
                 headers=headers,
                 auth=auth_tuple,
                 timeout=10
             )
         logger.info(f"✅ ntfy sent: {title}")
+    except UnicodeEncodeError as e:
+        # ✅ ถ้ายังมีปัญหา ให้ลบ emoji ออก
+        logger.warning(f"⚠️ Unicode error, removing emojis: {e}")
+        # ลบ emoji ทั้งหมด
+        import re
+        emoji_pattern = re.compile("["
+            u"\U0001F600-\U0001F64F"  # emoticons
+            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+            u"\U0001F680-\U0001F6FF"  # transport & map symbols
+            u"\U0001F1E0-\U0001F1FF"  # flags
+            "]+", flags=re.UNICODE)
+        
+        clean_message = emoji_pattern.sub(r'', message)
+        clean_title = emoji_pattern.sub(r'', title)
+        
+        headers["Title"] = clean_title
+        
+        async with httpx.AsyncClient() as client:
+            await client.post(
+                f"{server}/{topic}",
+                content=clean_message.encode('utf-8'),
+                headers=headers,
+                auth=auth_tuple,
+                timeout=10
+            )
+        logger.info(f"✅ ntfy sent (without emojis): {title}")
     except Exception as e:
         logger.error(f"❌ ntfy error: {e}")
 
