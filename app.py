@@ -16,6 +16,22 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ✅ ฟังก์ชันแปลงค่าเป็น float แบบปลอดภัย (รองรับ dict/list จาก API)
+def safe_float(val, default=0.0):
+    try:
+        if isinstance(val, (int, float)):
+            return float(val)
+        if isinstance(val, str):
+            return float(val)
+        if isinstance(val, dict):
+            # ถ้า API ส่งมาเป็น dict (เช่น total_hashrates: {"sha256": 123}) ให้รวมค่าทั้งหมด
+            return sum(safe_float(v) for v in val.values())
+        if isinstance(val, list):
+            return sum(safe_float(v) for v in val)
+        return default
+    except (ValueError, TypeError):
+        return default
+
 # Helper: get env with type casting
 def get_env(key: str, default=None, cast_type=str):
     value = os.getenv(key, default)
@@ -63,7 +79,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="2.0.0")
+app = FastAPI(title="zpool Monitor", version="2.0.1")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -99,11 +115,9 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
-        # ✅ ใช้ total_hashrates จาก API โดยตรง (ของจริง!)
-        real_hashrate = float(data.get("total_hashrates", 0))
-        
-        # ✅ ใช้ paidtotal จาก API โดยตรง
-        real_total_paid = float(data.get("paidtotal", 0))
+        # ✅ ใช้ safe_float แทน float() ตรงๆ ป้องกัน API ส่ง list/dict มา
+        real_hashrate = safe_float(data.get("total_hashrates", 0))
+        real_total_paid = safe_float(data.get("paidtotal", 0))
         
         miners = data.get("miners", [])
         
@@ -116,13 +130,13 @@ async def fetch_zpool_stats() -> dict:
                 if algo not in workers_dict:
                     workers_dict[algo] = []
                 
-                spm = float(m.get("spm", 0))
+                spm = safe_float(m.get("spm", 0))
                 total_spm += spm
                 
                 workers_dict[algo].append({
                     "worker": m.get("ID", "Unknown"),
                     "spm": spm,
-                    "accepted": float(m.get("accepted", 0)),
+                    "accepted": safe_float(m.get("accepted", 0)),
                     "alive": spm > 0
                 })
         
@@ -136,16 +150,16 @@ async def fetch_zpool_stats() -> dict:
         return {
             "currency": currency,
             "address": config["wallet"],
-            "unsold": float(data.get("unsold", 0)),
-            "balance": float(data.get("balance", 0)),
-            "unpaid": float(data.get("unpaid", 0)),
-            "paid24h": float(data.get("paid24h", 0)),
-            "total_paid": real_total_paid,  # ✅ ใช้ paidtotal
-            "hashrate": real_hashrate,      # ✅ ใช้ total_hashrates
+            "unsold": safe_float(data.get("unsold", 0)),
+            "balance": safe_float(data.get("balance", 0)),
+            "unpaid": safe_float(data.get("unpaid", 0)),
+            "paid24h": safe_float(data.get("paid24h", 0)),
+            "total_paid": real_total_paid,
+            "hashrate": real_hashrate,
             "spm": total_spm,
             "worker": worker_count,
-            "estimate": float(data.get("paid24h", 0)), # ใช้ paid24h เป็น Actual 24h
-            "minpay": float(data.get("minpay", 0)),
+            "estimate": safe_float(data.get("paid24h", 0)),
+            "minpay": safe_float(data.get("minpay", 0)),
             "workers_raw": workers_dict,
             "payouts": payouts
         }
@@ -242,7 +256,6 @@ async def check_alerts(stats: dict):
             "info"
         )
     
-    # ✅ Alert เมื่อ Hashrate จริงลดลง
     hr = stats.get("hashrate", 0)
     if state["max_hashrate"] > 0 and hr > 0:
         drop_percent = ((state["max_hashrate"] - hr) / state["max_hashrate"]) * 100
@@ -264,11 +277,9 @@ async def background_poller():
             state["workers"] = stats.get("workers_raw", {})
             state["payments"] = stats.get("payouts", [])
             
-            # ✅ อัปเดต Max Hashrate จากของจริง
             if stats["hashrate"] > state["max_hashrate"]:
                 state["max_hashrate"] = stats["hashrate"]
             
-            # ✅ เก็บ History ด้วย Hashrate จริง + Balance
             state["history"].append({
                 "time": datetime.now().isoformat(),
                 "hashrate": stats["hashrate"],
