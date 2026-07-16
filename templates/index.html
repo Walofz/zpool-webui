@@ -75,7 +75,7 @@
                         <tr class="text-left text-gray-400 border-b border-gray-700">
                             <th class="pb-2 pr-4">Name</th>
                             <th class="pb-2 pr-4">Algo</th>
-                            <th class="pb-2 pr-4">SPM (Shares/Min)</th>
+                            <th class="pb-2 pr-4">SPM</th>
                             <th class="pb-2 pr-4">Status</th>
                             <th class="pb-2">Accepted</th>
                         </tr>
@@ -91,10 +91,12 @@
         <div class="grid md:grid-cols-2 gap-4 mb-8">
             <div class="card">
                 <h3 class="text-lg font-semibold mb-4">Hashrate History</h3>
+                <div id="chart-hr-info" class="text-xs text-gray-400 mb-2">No data yet</div>
                 <canvas id="hashrateChart" height="150"></canvas>
             </div>
             <div class="card">
                 <h3 class="text-lg font-semibold mb-4">Balance History</h3>
+                <div id="chart-bal-info" class="text-xs text-gray-400 mb-2">No data yet</div>
                 <canvas id="balanceChart" height="150"></canvas>
             </div>
         </div>
@@ -150,35 +152,63 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.5.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.5.1 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
     <script>
+        // ✅ Helper: จัดรูปแบบเวลา 24h UTC+7 (ไทย)
         function formatDateTime(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return date.toLocaleString('th-TH', {
                 timeZone: 'Asia/Bangkok',
-                year: 'numeric', month: '2-digit', day: '2-digit',
-                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
             });
         }
 
+        // ✅ Helper: จัดรูปแบบเวลาสั้น (HH:MM) สำหรับกราฟ
         function formatTimeShort(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return date.toLocaleString('th-TH', {
-                timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false
+                timeZone: 'Asia/Bangkok',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
             });
         }
 
+        // ✅ Helper: Format ตัวเลขใหญ่ (Accepted Shares)
+        function formatLargeNumber(num) {
+            if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
+            if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+            if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+            if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+            return num.toFixed(0);
+        }
+
+        // Chart setup
         const chartOpts = {
-            responsive: true, animation: { duration: 0 },
+            responsive: true,
+            animation: { duration: 0 },
             plugins: { legend: { display: false } },
             scales: {
-                y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
-                x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: '#334155' } }
+                y: { 
+                    beginAtZero: true,
+                    ticks: { color: '#94a3b8' }, 
+                    grid: { color: '#334155' } 
+                },
+                x: { 
+                    ticks: { color: '#94a3b8', maxTicksLimit: 8 }, 
+                    grid: { color: '#334155' } 
+                }
             }
         };
 
@@ -202,7 +232,7 @@
             return [h.toFixed(2), 'H/s'];
         }
 
-        // ✅ แก้ไขแล้ว: แสดง SPM และใช้ field ID, algo จาก API จริง
+        // ✅ Workers - แสดง SPM และ Format Accepted
         async function updateWorkers() {
             try {
                 const res = await fetch('/api/workers?t=' + Date.now());
@@ -235,9 +265,9 @@
                         html += `<tr class="border-b border-gray-800">
                             <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
                             <td class="py-3 pr-4 text-gray-400">${algo}</td>
-                            <td class="py-3 pr-4 font-mono">${spm.toFixed(1)}</td>
+                            <td class="py-3 pr-4 font-mono text-green-400">${spm.toFixed(1)}</td>
                             <td class="py-3 pr-4"><span class="${statusClass}">${statusText}</span></td>
-                            <td class="py-3 text-xs text-gray-400 font-mono">${accepted.toLocaleString()}</td>
+                            <td class="py-3 text-xs text-gray-400 font-mono">${formatLargeNumber(accepted)}</td>
                         </tr>`;
                     }
                 }
@@ -312,20 +342,38 @@
             } catch (e) { console.error('Payments error:', e); }
         }
 
+        // ✅ แก้ไข Charts - แสดงข้อมูลและ debug
         async function updateCharts() {
             try {
                 const res = await fetch('/api/history?t=' + Date.now());
                 const history = await res.json();
+                
+                // Debug: แสดงจำนวนข้อมูล
+                document.getElementById('chart-hr-info').textContent = `${history.length} data points`;
+                document.getElementById('chart-bal-info').textContent = `${history.length} data points`;
+                
+                if (history.length === 0) {
+                    // ถ้ายังไม่มีข้อมูล รอไปก่อน
+                    return;
+                }
+                
                 const labels = history.map(h => formatTimeShort(h.time));
                 
+                // Hashrate Chart
                 hashrateChart.data.labels = labels;
-                hashrateChart.data.datasets[0].data = history.map(h => h.hashrate);
-                hashrateChart.update();
+                hashrateChart.data.datasets[0].data = history.map(h => h.hashrate || 0);
+                hashrateChart.update('none'); // ใช้ 'none' เพื่อไม่ animate
                 
+                // Balance Chart
                 balanceChart.data.labels = labels;
-                balanceChart.data.datasets[0].data = history.map(h => h.balance);
-                balanceChart.update();
-            } catch (e) { console.error('Charts error:', e); }
+                balanceChart.data.datasets[0].data = history.map(h => h.balance || 0);
+                balanceChart.update('none');
+                
+            } catch (e) { 
+                console.error('Charts error:', e);
+                document.getElementById('chart-hr-info').textContent = 'Error loading data';
+                document.getElementById('chart-bal-info').textContent = 'Error loading data';
+            }
         }
 
         async function updateAlertStatus() {
@@ -356,16 +404,19 @@
             } catch (e) { console.error('Config error:', e); }
         }
 
+        // Initial load
+        console.log('Starting zpool Monitor...');
         updateStats();
         updateWorkers();
         updatePayments();
         updateCharts();
         updateAlertStatus();
 
-        setInterval(updateStats, 10000);
-        setInterval(updateWorkers, 30000);
-        setInterval(updatePayments, 300000);
-        setInterval(updateCharts, 10000);
+        // Auto refresh
+        setInterval(updateStats, 10000);      // 10s
+        setInterval(updateWorkers, 30000);    // 30s
+        setInterval(updatePayments, 300000);  // 5min
+        setInterval(updateCharts, 10000);     // 10s
     </script>
 </body>
 </html>
