@@ -60,10 +60,8 @@ if not config["wallet"]:
 logger.info("Configuration loaded:")
 logger.info(f"   Wallet: {config['wallet'][:10]}...")
 logger.info(f"   Refresh: {config['refresh_interval']}s")
-logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
-logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.3.0")
+app = FastAPI(title="zpool Monitor", version="1.4.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -99,20 +97,28 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
-        # DEBUG: log โครงสร้างข้อมูลจาก API (ดูแค่ keys)
-        logger.info(f"API Response keys: {list(data.keys())}")
-        
         miners = data.get("miners", [])
         
-        # อ่าน currency จาก API (รองรับหลาย field name)
+        # ✅ คำนวณ Hashrate จริงจาก miners (รองรับทั้ง List และ Dict)
+        total_hashrate = 0.0
+        if isinstance(miners, list):
+            for m in miners:
+                if isinstance(m, dict):
+                    total_hashrate += float(m.get('hashrate', m.get('hr', 0)))
+        elif isinstance(miners, dict):
+            for algo, m_list in miners.items():
+                if isinstance(m_list, list):
+                    for m in m_list:
+                        total_hashrate += float(m.get('hashrate', m.get('hr', 0)))
+
+        # อ่าน currency จาก API
         currency = (
             data.get("currency") or 
             data.get("coin") or 
             data.get("payout_currency") or 
-            "BTC"  # default
+            "BTC"
         ).upper()
         
-        # อ่าน payouts (รองรับหลาย field name)
         payouts = (
             data.get("payouts") or 
             data.get("payments") or 
@@ -120,11 +126,8 @@ async def fetch_zpool_stats() -> dict:
             []
         )
         
-        # DEBUG: log โครงสร้าง payouts
         if payouts:
-            logger.info(f"Payouts count: {len(payouts)}")
-            if len(payouts) > 0:
-                logger.info(f"First payout keys: {list(payouts[0].keys()) if isinstance(payouts[0], dict) else 'Not a dict'}")
+            logger.info(f"Payouts found: {len(payouts)}")
         
         return {
             "currency": currency,
@@ -134,12 +137,11 @@ async def fetch_zpool_stats() -> dict:
             "unpaid": float(data.get("unpaid", 0)),
             "paid24h": float(data.get("paid24h", 0)),
             "total_paid": float(data.get("total", 0)),
-            "hashrate": 0,
-            "worker": len(miners),
-            "estimate": 0,
+            "hashrate": total_hashrate, # ✅ ใช้ค่าที่คำนวณได้จริง
+            "worker": len(miners) if isinstance(miners, list) else sum(len(v) for v in miners.values() if isinstance(v, list)),
+            "estimate": float(data.get("estimate", 0)),
             "miners": miners,
-            "payouts": payouts,
-            "raw_api_keys": list(data.keys())  # สำหรับ debug
+            "payouts": payouts
         }
 
 
@@ -245,16 +247,20 @@ async def background_poller():
             state["workers"] = {"SHA-256": stats.get("miners", [])}
             state["payments"] = stats.get("payouts", [])
             
+            # อัปเดต Max Hashrate
+            if stats["hashrate"] > state["max_hashrate"]:
+                state["max_hashrate"] = stats["hashrate"]
+            
             state["history"].append({
                 "time": datetime.utcnow().isoformat(),
-                "hashrate": stats.get("hashrate", 0),
-                "balance": stats.get("balance", 0),
-                "workers": stats.get("worker", 0)
+                "hashrate": stats["hashrate"],
+                "balance": stats["balance"],
+                "workers": stats["worker"]
             })
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: currency={stats.get('currency')}, balance={stats.get('balance')}, workers={stats.get('worker')}, payouts={len(stats.get('payouts', []))}")
+            logger.info(f"Updated: HR={stats['hashrate']:.2f}, Bal={stats['balance']:.8f} {stats['currency']}, Workers={stats['worker']}")
             
         except Exception as e:
             logger.error(f"Polling error: {str(e)}")

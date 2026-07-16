@@ -150,14 +150,43 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.2.2 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.4.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
     <script>
+        // ✅ Helper: จัดรูปแบบเวลา 24h UTC+7 (ไทย)
+        function formatDateTime(ts) {
+            if (!ts) return '-';
+            const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            return date.toLocaleString('th-TH', {
+                timeZone: 'Asia/Bangkok',
+                year: 'numeric',
+                month: '2-digit',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+                hour12: false
+            });
+        }
+
+        // ✅ Helper: จัดรูปแบบเวลาสั้น (HH:MM) สำหรับกราฟ
+        function formatTimeShort(ts) {
+            if (!ts) return '-';
+            const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            return date.toLocaleString('th-TH', {
+                timeZone: 'Asia/Bangkok',
+                hour: '2-digit',
+                minute: '2-digit',
+                hour12: false
+            });
+        }
+
         // Chart setup
         const chartOpts = {
             responsive: true,
+            animation: { duration: 0 }, // ปิด animation เพื่อให้ update เร็วขึ้น
             plugins: { legend: { display: false } },
             scales: {
                 y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
@@ -167,13 +196,13 @@
 
         const hashrateChart = new Chart(document.getElementById('hashrateChart'), {
             type: 'line',
-            data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.4, pointRadius: 0 }] },
+            data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
             options: chartOpts
         });
 
         const balanceChart = new Chart(document.getElementById('balanceChart'), {
             type: 'line',
-            data: { labels: [], datasets: [{ data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.4, pointRadius: 0 }] },
+            data: { labels: [], datasets: [{ data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
             options: chartOpts
         });
 
@@ -185,14 +214,10 @@
             return [h.toFixed(2), 'H/s'];
         }
 
-        function formatTime(ts) {
-            if (!ts) return '-';
-            return new Date(ts * 1000).toLocaleString('en-US');
-        }
-
+        // ✅ เพิ่ม Cache Busting (?t=...) เพื่อบังคับให้ Browser ดึงข้อมูลใหม่เสมอ
         async function updateStats() {
             try {
-                const res = await fetch('/api/stats');
+                const res = await fetch('/api/stats?t=' + Date.now());
                 const d = await res.json();
                 if (d.error) return;
 
@@ -216,7 +241,7 @@
                 const [maxHr, maxUnit] = formatHashrate(d.max_hashrate);
                 document.getElementById('max-hashrate').textContent = `${maxHr} ${maxUnit}`;
 
-                document.getElementById('last-update').textContent = new Date(d.last_update).toLocaleString('en-US');
+                document.getElementById('last-update').textContent = formatDateTime(d.last_update);
 
             } catch (e) {
                 console.error('Stats error:', e);
@@ -226,7 +251,7 @@
 
         async function updateWorkers() {
             try {
-                const res = await fetch('/api/workers');
+                const res = await fetch('/api/workers?t=' + Date.now());
                 const data = await res.json();
                 const list = document.getElementById('worker-list');
                 
@@ -241,12 +266,11 @@
                     if (!Array.isArray(workers)) continue;
                     for (const w of workers) {
                         total++;
-                        // zpool API ใช้ field name ที่อาจต่างกัน ตรวจสอบหลายแบบ
                         const isAlive = w.alive !== undefined ? w.alive : (w.status === 'active');
                         if (isAlive) online++;
                         const [hr, unit] = formatHashrate(w.hashrate || 0);
                         const status = isAlive ? '<span class="status-online">Online</span>' : '<span class="status-offline">Offline</span>';
-                        const lastSeen = w.lastsubmit ? formatTime(w.lastsubmit) : 'Never';
+                        const lastSeen = w.lastsubmit ? formatDateTime(w.lastsubmit) : 'Never';
                         const workerName = w.worker || w.name || 'Unknown';
                         html += `<tr class="border-b border-gray-800">
                             <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
@@ -259,13 +283,13 @@
                 }
                 list.innerHTML = html || '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
                 document.getElementById('workers-status').textContent = `${online} online / ${total} total`;
-                document.getElementById('worker-update').textContent = new Date().toLocaleTimeString('en-US');
+                document.getElementById('worker-update').textContent = formatTimeShort(new Date());
             } catch (e) { console.error('Workers error:', e); }
         }
 
         async function updatePayments() {
             try {
-                const res = await fetch('/api/payments');
+                const res = await fetch('/api/payments?t=' + Date.now());
                 const payments = await res.json();
                 const list = document.getElementById('payment-list');
                 
@@ -282,7 +306,7 @@
                     html += `<div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
                         <div>
                             <div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${currency}</div>
-                            <div class="text-xs text-gray-400">${formatTime(p.time)}</div>
+                            <div class="text-xs text-gray-400">${formatDateTime(p.time)}</div>
                         </div>
                         <a href="#" class="tx-link text-xs font-mono">${txid}</a>
                     </div>`;
@@ -294,23 +318,25 @@
 
         async function updateCharts() {
             try {
-                const res = await fetch('/api/history');
+                const res = await fetch('/api/history?t=' + Date.now());
                 const history = await res.json();
-                const labels = history.map(h => new Date(h.time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}));
+                
+                // ✅ History ใช้เวลา 24h UTC+7
+                const labels = history.map(h => formatTimeShort(h.time));
                 
                 hashrateChart.data.labels = labels;
                 hashrateChart.data.datasets[0].data = history.map(h => h.hashrate);
-                hashrateChart.update('none');
+                hashrateChart.update();
                 
                 balanceChart.data.labels = labels;
                 balanceChart.data.datasets[0].data = history.map(h => h.balance);
-                balanceChart.update('none');
+                balanceChart.update();
             } catch (e) { console.error('Charts error:', e); }
         }
 
         async function updateAlertStatus() {
             try {
-                const res = await fetch('/api/config');
+                const res = await fetch('/api/config?t=' + Date.now());
                 const cfg = await res.json();
                 const el = document.getElementById('alert-status');
                 document.getElementById('refresh-interval').textContent = cfg.refresh_interval;
@@ -344,10 +370,10 @@
         updateAlertStatus();
 
         // Auto refresh
-        setInterval(updateStats, 30000);
+        setInterval(updateStats, 10000);      // 10 วิ (เร็วขึ้นเพื่อดูผล)
         setInterval(updateWorkers, 30000);
         setInterval(updatePayments, 300000);
-        setInterval(updateCharts, 60000);
+        setInterval(updateCharts, 10000);     // 10 วิ ( sync กับ stats)
     </script>
 </body>
 </html>
