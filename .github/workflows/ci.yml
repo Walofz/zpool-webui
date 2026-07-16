@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install ruff mypy
+
+      - name: Lint with Ruff
+        run: |
+          ruff check app.py
+          ruff format --check app.py
+
+      - name: Type check with mypy
+        run: |
+          mypy app.py --ignore-missing-imports || true
+
+  docker-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build Docker image
+        run: |
+          docker build -t zpool-monitor:test .
+
+      - name: Test container startup
+        run: |
+          docker run -d --name test-container \
+            -e ZPOOL_WALLET=test123 \
+            -p 8000:8000 \
+            zpool-monitor:test
+          
+          # Wait for startup
+          sleep 10
+          
+          # Health check
+          curl -f http://localhost:8000/health || exit 1
+          
+          # Cleanup
+          docker stop test-container
+          docker rm test-container

@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>zpool Monitor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
+        .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+        .stat-value { font-size: 1.8rem; font-weight: bold; color: #10b981; font-family: 'Courier New', monospace; }
+        .stat-label { color: #94a3b8; font-size: 0.875rem; margin-bottom: 4px; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+        .glow { box-shadow: 0 0 20px rgba(16, 185, 129, 0.15); }
+        .status-online { color: #10b981; }
+        .status-offline { color: #ef4444; }
+        .tx-link { color: #60a5fa; text-decoration: none; }
+        .tx-link:hover { text-decoration: underline; }
+        table { border-collapse: collapse; }
+        tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
+    </style>
+</head>
+<body class="min-h-screen p-4 md:p-8">
+    <div class="max-w-6xl mx-auto">
+        <!-- Header -->
+        <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
+            <div>
+                <h1 class="text-3xl font-bold">⛏️ zpool Monitor</h1>
+                <p class="text-sm text-gray-400 mt-1">
+                    Wallet: <span id="wallet-display" class="font-mono text-gray-300">Loading...</span>
+                    <span id="currency-badge" class="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">-</span>
+                </p>
+            </div>
+            <div id="status-indicator" class="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full">
+                <span class="w-2 h-2 bg-green-500 rounded-full pulse"></span>
+                <span class="text-sm text-green-400">Live</span>
+            </div>
+        </div>
+
+        <!-- Stats Grid -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="card glow">
+                <div class="stat-label">💰 Balance</div>
+                <div id="balance" class="stat-value">-</div>
+                <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
+            </div>
+            <div class="card">
+                <div class="stat-label">⚡ Hashrate</div>
+                <div id="hashrate" class="stat-value">-</div>
+                <div id="hashrate-unit" class="text-xs text-gray-400 mt-1">H/s</div>
+            </div>
+            <div class="card">
+                <div class="stat-label">👷 Workers</div>
+                <div id="workers" class="stat-value">-</div>
+                <div id="workers-status" class="text-xs text-gray-400 mt-1">-</div>
+            </div>
+            <div class="card">
+                <div class="stat-label">📈 Paid 24h</div>
+                <div id="paid24h" class="stat-value">-</div>
+                <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
+            </div>
+        </div>
+
+        <!-- Blocks Found -->
+        <div class="card mb-8">
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h3 class="text-lg font-semibold">🧱 Blocks Found (Your Shares)</h3>
+                <span class="text-sm text-gray-400">Total: <span id="total-blocks" class="text-green-400 font-mono">0</span></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-gray-400 border-b border-gray-700">
+                            <th class="pb-2 pr-4">Height</th>
+                            <th class="pb-2 pr-4">Algo</th>
+                            <th class="pb-2 pr-4">Coin</th>
+                            <th class="pb-2 pr-4">Your Reward</th>
+                            <th class="pb-2 pr-4">Status</th>
+                            <th class="pb-2 pr-4">Confirms</th>
+                            <th class="pb-2">Time</th>
+                        </tr>
+                    </thead>
+                    <tbody id="blocks-list">
+                        <tr><td colspan="7" class="py-4 text-center text-gray-500">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Workers -->
+        <div class="card mb-8">
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h3 class="text-lg font-semibold">👷 Workers</h3>
+                <span class="text-sm text-gray-400">Last: <span id="worker-update">-</span></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-gray-400 border-b border-gray-700">
+                            <th class="pb-2 pr-4">Name</th>
+                            <th class="pb-2 pr-4">Algo</th>
+                            <th class="pb-2 pr-4">Hashrate</th>
+                            <th class="pb-2 pr-4">Status</th>
+                            <th class="pb-2">Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="worker-list">
+                        <tr><td colspan="5" class="py-4 text-center text-gray-500">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- Charts -->
+        <div class="grid md:grid-cols-2 gap-4 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">⚡ Hashrate History</h3>
+                <canvas id="hashrateChart" height="150"></canvas>
+            </div>
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">💰 Balance History</h3>
+                <canvas id="balanceChart" height="150"></canvas>
+            </div>
+        </div>
+
+        <!-- Payments + Mining Info -->
+        <div class="grid md:grid-cols-2 gap-4 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">💸 Recent Payments</h3>
+                <div id="payment-list" class="space-y-2">
+                    <div class="text-center text-gray-500 py-4">Loading...</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
+                    Total paid: <span id="total-paid" class="text-gray-200 font-mono">-</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">⛏️ Mining Info</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Currency</span>
+                        <span id="mining-currency" class="font-mono text-blue-400">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Unsold</span>
+                        <span id="unsold" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Total Paid</span>
+                        <span id="total-paid-detail" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Estimate (24h)</span>
+                        <span id="estimate" class="font-mono text-green-400">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Max Hashrate</span>
+                        <span id="max-hashrate" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-400">Last Update</span>
+                        <span id="last-update" class="font-mono text-xs">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Alert Status -->
+        <div class="card mb-8">
+            <h3 class="text-lg font-semibold mb-4">🔔 Alert Channels</h3>
+            <div id="alert-status" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
+        </div>
+
+        <!-- Footer -->
+        <div class="text-center text-xs text-gray-500 pb-4">
+            zpool Monitor v1.0.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+        </div>
+    </div>
+
+    <script>
+        // Chart setup
+        const chartOpts = {
+            responsive: true,
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: '#334155' } }
+            }
+        };
+
+        const hashrateChart = new Chart(document.getElementById('hashrateChart'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.4, pointRadius: 0 }] },
+            options: chartOpts
+        });
+
+        const balanceChart = new Chart(document.getElementById('balanceChart'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.4, pointRadius: 0 }] },
+            options: chartOpts
+        });
+
+        function formatHashrate(h) {
+            if (h >= 1e12) return [(h/1e12).toFixed(2), 'TH/s'];
+            if (h >= 1e9) return [(h/1e9).toFixed(2), 'GH/s'];
+            if (h >= 1e6) return [(h/1e6).toFixed(2), 'MH/s'];
+            if (h >= 1e3) return [(h/1e3).toFixed(2), 'KH/s'];
+            return [h.toFixed(2), 'H/s'];
+        }
+
+        function formatTime(ts) {
+            if (!ts) return '-';
+            return new Date(ts * 1000).toLocaleString('th-TH');
+        }
+
+        async function updateStats() {
+            try {
+                const res = await fetch('/api/stats');
+                const d = await res.json();
+                if (d.error) return;
+
+                const currency = d.currency || 'BTC';
+                document.getElementById('balance').textContent = d.balance.toFixed(8);
+                document.getElementById('paid24h').textContent = d.paid24h.toFixed(8);
+                document.getElementById('unsold').textContent = d.unsold.toFixed(8) + ' ' + currency;
+                document.getElementById('total-paid-detail').textContent = d.total_paid.toFixed(8) + ' ' + currency;
+                document.getElementById('estimate').textContent = d.estimate.toFixed(8) + ' ' + currency + '/day';
+                document.getElementById('workers').textContent = d.worker;
+                document.getElementById('mining-currency').textContent = currency;
+                document.getElementById('currency-badge').textContent = currency;
+                document.getElementById('wallet-display').textContent = d.address ? d.address.substring(0, 10) + '...' : 'Loading...';
+                
+                document.querySelectorAll('.currency-unit').forEach(el => el.textContent = currency);
+
+                const [hr, unit] = formatHashrate(d.hashrate);
+                document.getElementById('hashrate').textContent = hr;
+                document.getElementById('hashrate-unit').textContent = unit;
+
+                const [maxHr, maxUnit] = formatHashrate(d.max_hashrate);
+                document.getElementById('max-hashrate').textContent = `${maxHr} ${maxUnit}`;
+
+                document.getElementById('last-update').textContent = new Date(d.last_update).toLocaleString('th-TH');
+
+            } catch (e) {
+                console.error('Stats error:', e);
+                document.getElementById('status-indicator').innerHTML = '<span class="w-2 h-2 bg-red-500 rounded-full"></span><span class="text-sm text-red-400">Error</span>';
+            }
+        }
+
+        async function updateWorkers() {
+            try {
+                const res = await fetch('/api/workers');
+                const data = await res.json();
+                const list = document.getElementById('worker-list');
+                
+                if (!data || Object.keys(data).length === 0) {
+                    list.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
+                    document.getElementById('workers-status').textContent = '0 online';
+                    return;
+                }
+
+                let html = '', online = 0, total = 0;
+                for (const [algo, workers] of Object.entries(data)) {
+                    if (!Array.isArray(workers)) continue;
+                    for (const w of workers) {
+                        total++;
+                        if (w.alive) online++;
+                        const [hr, unit] = formatHashrate(w.hashrate || 0);
+                        const status = w.alive ? '<span class="status-online">● Online</span>' : '<span class="status-offline">● Offline</span>';
+                        const lastSeen = w.lastsubmit ? formatTime(w.lastsubmit) : 'Never';
+                        html += `<tr class="border-b border-gray-800">
+                            <td class="py-3 pr-4 font-mono text-blue-400">${w.worker || 'Unknown'}</td>
+                            <td class="py-3 pr-4 text-gray-400">${algo}</td>
+                            <td class="py-3 pr-4 font-mono">${hr} ${unit}</td>
+                            <td class="py-3 pr-4">${status}</td>
+                            <td class="py-3 text-xs text-gray-400">${lastSeen}</td>
+                        </tr>`;
+                    }
+                }
+                list.innerHTML = html || '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
+                document.getElementById('workers-status').textContent = `${online} online • ${total - online} offline`;
+                document.getElementById('worker-update').textContent = new Date().toLocaleTimeString('th-TH');
+            } catch (e) { console.error('Workers error:', e); }
+        }
+
+        async function updatePayments() {
+            try {
+                const res = await fetch('/api/payments');
+                const payments = await res.json();
+                const list = document.getElementById('payment-list');
+                
+                if (!payments || payments.length === 0) {
+                    list.innerHTML = '<div class="text-center text-gray-500 py-4">No payments yet</div>';
+                    return;
+                }
+
+                let html = '', total = 0;
+                for (const p of payments) {
+                    total += p.amount || 0;
+                    const coin = p.coin || 'BTC';
+                    const txid = p.txid ? p.txid.substring(0, 8) + '...' : 'N/A';
+                    html += `<div class="flex justify-between p-2 bg-gray-800/50 rounded">
+                        <div>
+                            <div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${coin}</div>
+                            <div class="text-xs text-gray-400">${formatTime(p.time)}</div>
+                        </div>
+                        <a href="#" class="tx-link text-xs font-mono self-center">${txid}</a>
+                    </div>`;
+                }
+                list.innerHTML = html;
+                document.getElementById('total-paid').textContent = `${total.toFixed(8)} ${payments[0]?.coin || 'BTC'}`;
+            } catch (e) { console.error('Payments error:', e); }
+        }
+
+        async function updateBlocks() {
+            try {
+                const res = await fetch('/api/blocks');
+                const blocks = await res.json();
+                const list = document.getElementById('blocks-list');
+                const totalEl = document.getElementById('total-blocks');
+                
+                if (!blocks || blocks.length === 0) {
+                    list.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-gray-500">No blocks found yet</td></tr>';
+                    totalEl.textContent = '0';
+                    return;
+                }
+
+                let html = '', confirmed = 0;
+                for (const b of blocks) {
+                    let status = '', cls = '';
+                    const conf = b.confirmations || 0;
+                    if (b.category === 'orphan' || b.status === 'orphaned') {
+                        status = '❌ Orphaned'; cls = 'text-red-400';
+                    } else if (b.category === 'immature' || conf < 100) {
+                        status = '⏳ Immature'; cls = 'text-yellow-400';
+                    } else {
+                        status = '✅ Confirmed'; cls = 'text-green-400';
+                        confirmed++;
+                    }
+                    html += `<tr class="border-b border-gray-800">
+                        <td class="py-3 pr-4 font-mono text-blue-400">${b.height || 'N/A'}</td>
+                        <td class="py-3 pr-4 text-gray-400">${b.algo || '-'}</td>
+                        <td class="py-3 pr-4 font-mono">${b.coin || '-'}</td>
+                        <td class="py-3 pr-4 font-mono text-green-400">${(b.amount || 0).toFixed(8)}</td>
+                        <td class="py-3 pr-4 ${cls} font-semibold">${status}</td>
+                        <td class="py-3 pr-4 font-mono">${conf}</td>
+                        <td class="py-3 text-xs text-gray-400">${formatTime(b.time)}</td>
+                    </tr>`;
+                }
+                list.innerHTML = html;
+                totalEl.textContent = `${confirmed} confirmed / ${blocks.length} total`;
+            } catch (e) { console.error('Blocks error:', e); }
+        }
+
+        async function updateCharts() {
+            try {
+                const res = await fetch('/api/history');
+                const history = await res.json();
+                const labels = history.map(h => new Date(h.time).toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}));
+                
+                hashrateChart.data.labels = labels;
+                hashrateChart.data.datasets[0].data = history.map(h => h.hashrate);
+                hashrateChart.update('none');
+                
+                balanceChart.data.labels = labels;
+                balanceChart.data.datasets[0].data = history.map(h => h.balance);
+                balanceChart.update('none');
+            } catch (e) { console.error('Charts error:', e); }
+        }
+
+        async function updateAlertStatus() {
+            try {
+                const res = await fetch('/api/config');
+                const cfg = await res.json();
+                const el = document.getElementById('alert-status');
+                document.getElementById('refresh-interval').textContent = cfg.refresh_interval;
+                
+                let html = '';
+                html += `<div class="p-2 ${cfg.notifications.discord.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
+                    <div>Discord</div>
+                    <div class="text-xs ${cfg.notifications.discord.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.discord.enabled ? '✓ Enabled' : '✗ Disabled'}</div>
+                </div>`;
+                html += `<div class="p-2 ${cfg.notifications.ntfy.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
+                    <div>ntfy</div>
+                    <div class="text-xs ${cfg.notifications.ntfy.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.ntfy.enabled ? '✓ Enabled' : '✗ Disabled'}</div>
+                </div>`;
+                html += `<div class="p-2 bg-blue-500/10 rounded">
+                    <div>Worker Offline</div>
+                    <div class="text-xs text-blue-400">${cfg.alerts.worker_offline ? 'Active' : 'Off'}</div>
+                </div>`;
+                html += `<div class="p-2 bg-blue-500/10 rounded">
+                    <div>Balance Goal</div>
+                    <div class="text-xs text-blue-400">≥ ${cfg.alerts.min_balance}</div>
+                </div>`;
+                el.innerHTML = html;
+            } catch (e) { console.error('Config error:', e); }
+        }
+
+        // Initial load
+        updateStats();
+        updateWorkers();
+        updatePayments();
+        updateBlocks();
+        updateCharts();
+        updateAlertStatus();
+
+        // Auto refresh
+        setInterval(updateStats, 30000);
+        setInterval(updateWorkers, 30000);
+        setInterval(updatePayments, 300000);
+        setInterval(updateBlocks, 300000);
+        setInterval(updateCharts, 60000);
+    </script>
+</body>
+</html>
