@@ -60,8 +60,10 @@ if not config["wallet"]:
 logger.info("Configuration loaded:")
 logger.info(f"   Wallet: {config['wallet'][:10]}...")
 logger.info(f"   Refresh: {config['refresh_interval']}s")
+logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
+logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.4.0")
+app = FastAPI(title="zpool Monitor", version="1.4.1")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -97,21 +99,38 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
+        # DEBUG: Log API response structure
+        logger.info(f"API Response keys: {list(data.keys())}")
+        
         miners = data.get("miners", [])
         
-        # ✅ คำนวณ Hashrate จริงจาก miners (รองรับทั้ง List และ Dict)
+        # DEBUG: Log miners structure
+        if isinstance(miners, list):
+            logger.info(f"Miners type: list, count: {len(miners)}")
+            if len(miners) > 0 and isinstance(miners[0], dict):
+                logger.info(f"First miner keys: {list(miners[0].keys())}")
+                logger.info(f"First miner data: {miners[0]}")
+        elif isinstance(miners, dict):
+            logger.info(f"Miners type: dict")
+            for algo, m_list in miners.items():
+                if isinstance(m_list, list) and len(m_list) > 0:
+                    logger.info(f"Algo '{algo}' - First miner keys: {list(m_list[0].keys())}")
+                    logger.info(f"Algo '{algo}' - First miner: {m_list[0]}")
+                    break
+        
+        # Calculate hashrate from miners
         total_hashrate = 0.0
         if isinstance(miners, list):
             for m in miners:
                 if isinstance(m, dict):
-                    total_hashrate += float(m.get('hashrate', m.get('hr', 0)))
+                    total_hashrate += float(m.get('hashrate', m.get('hr', m.get('hash_rate', 0))))
         elif isinstance(miners, dict):
             for algo, m_list in miners.items():
                 if isinstance(m_list, list):
                     for m in m_list:
-                        total_hashrate += float(m.get('hashrate', m.get('hr', 0)))
+                        total_hashrate += float(m.get('hashrate', m.get('hr', m.get('hash_rate', 0))))
 
-        # อ่าน currency จาก API
+        # Read currency from API
         currency = (
             data.get("currency") or 
             data.get("coin") or 
@@ -128,6 +147,15 @@ async def fetch_zpool_stats() -> dict:
         
         if payouts:
             logger.info(f"Payouts found: {len(payouts)}")
+            if len(payouts) > 0 and isinstance(payouts[0], dict):
+                logger.info(f"First payout keys: {list(payouts[0].keys())}")
+        
+        # Count workers
+        worker_count = 0
+        if isinstance(miners, list):
+            worker_count = len(miners)
+        elif isinstance(miners, dict):
+            worker_count = sum(len(v) for v in miners.values() if isinstance(v, list))
         
         return {
             "currency": currency,
@@ -137,8 +165,8 @@ async def fetch_zpool_stats() -> dict:
             "unpaid": float(data.get("unpaid", 0)),
             "paid24h": float(data.get("paid24h", 0)),
             "total_paid": float(data.get("total", 0)),
-            "hashrate": total_hashrate, # ✅ ใช้ค่าที่คำนวณได้จริง
-            "worker": len(miners) if isinstance(miners, list) else sum(len(v) for v in miners.values() if isinstance(v, list)),
+            "hashrate": total_hashrate,
+            "worker": worker_count,
             "estimate": float(data.get("estimate", 0)),
             "miners": miners,
             "payouts": payouts
@@ -247,7 +275,6 @@ async def background_poller():
             state["workers"] = {"SHA-256": stats.get("miners", [])}
             state["payments"] = stats.get("payouts", [])
             
-            # อัปเดต Max Hashrate
             if stats["hashrate"] > state["max_hashrate"]:
                 state["max_hashrate"] = stats["hashrate"]
             

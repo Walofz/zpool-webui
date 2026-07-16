@@ -150,7 +150,7 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.4.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.4.1 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -186,7 +186,7 @@
         // Chart setup
         const chartOpts = {
             responsive: true,
-            animation: { duration: 0 }, // ปิด animation เพื่อให้ update เร็วขึ้น
+            animation: { duration: 0 },
             plugins: { legend: { display: false } },
             scales: {
                 y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
@@ -214,7 +214,91 @@
             return [h.toFixed(2), 'H/s'];
         }
 
-        // ✅ เพิ่ม Cache Busting (?t=...) เพื่อบังคับให้ Browser ดึงข้อมูลใหม่เสมอ
+        // ✅ รองรับ multiple field names สำหรับ workers
+        async function updateWorkers() {
+            try {
+                const res = await fetch('/api/workers?t=' + Date.now());
+                const data = await res.json();
+                const list = document.getElementById('worker-list');
+                
+                if (!data || Object.keys(data).length === 0) {
+                    list.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
+                    document.getElementById('workers-status').textContent = '0 online';
+                    return;
+                }
+
+                let html = '', online = 0, total = 0;
+                
+                for (const [algo, workers] of Object.entries(data)) {
+                    if (!Array.isArray(workers)) continue;
+                    
+                    for (const w of workers) {
+                        total++;
+                        
+                        // ✅ ตรวจสอบ status จากหลาย field
+                        const isAlive = (
+                            w.alive === true || 
+                            w.status === 'active' || 
+                            w.status === 'online' || 
+                            w.status === 'alive' ||
+                            (w.hr && parseFloat(w.hr) > 0) ||
+                            (w.hashrate && parseFloat(w.hashrate) > 0)
+                        );
+                        
+                        if (isAlive) online++;
+                        
+                        // ✅ รองรับ hashrate จากหลาย field
+                        const hashrate = parseFloat(
+                            w.hashrate || w.hr || w.hash_rate || w.hashRate || 0
+                        );
+                        const [hr, unit] = formatHashrate(hashrate);
+                        
+                        // ✅ รองรับ name จากหลาย field
+                        const workerName = (
+                            w.worker || 
+                            w.name || 
+                            w.worker_name || 
+                            w.workerName || 
+                            w.id ||
+                            w.miner ||
+                            'Unknown'
+                        );
+                        
+                        // ✅ รองรับ last submit time จากหลาย field
+                        const lastSubmit = (
+                            w.lastsubmit || 
+                            w.last_submit || 
+                            w.lastSubmit || 
+                            w.lastseen || 
+                            w.last_seen || 
+                            w.lastSeen ||
+                            w.time ||
+                            w.updated
+                        );
+                        const lastSeen = lastSubmit ? formatDateTime(lastSubmit) : 'Never';
+                        
+                        const statusClass = isAlive ? 'status-online' : 'status-offline';
+                        const statusText = isAlive ? 'Online' : 'Offline';
+                        
+                        html += `<tr class="border-b border-gray-800">
+                            <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
+                            <td class="py-3 pr-4 text-gray-400">${algo}</td>
+                            <td class="py-3 pr-4 font-mono">${hr} ${unit}</td>
+                            <td class="py-3 pr-4"><span class="${statusClass}">${statusText}</span></td>
+                            <td class="py-3 text-xs text-gray-400">${lastSeen}</td>
+                        </tr>`;
+                    }
+                }
+                
+                list.innerHTML = html || '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers found</td></tr>';
+                document.getElementById('workers-status').textContent = `${online} online / ${total} total`;
+                document.getElementById('worker-update').textContent = formatTimeShort(new Date());
+                
+            } catch (e) { 
+                console.error('Workers error:', e); 
+            }
+        }
+
         async function updateStats() {
             try {
                 const res = await fetch('/api/stats?t=' + Date.now());
@@ -249,44 +333,6 @@
             }
         }
 
-        async function updateWorkers() {
-            try {
-                const res = await fetch('/api/workers?t=' + Date.now());
-                const data = await res.json();
-                const list = document.getElementById('worker-list');
-                
-                if (!data || Object.keys(data).length === 0) {
-                    list.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
-                    document.getElementById('workers-status').textContent = '0 online';
-                    return;
-                }
-
-                let html = '', online = 0, total = 0;
-                for (const [algo, workers] of Object.entries(data)) {
-                    if (!Array.isArray(workers)) continue;
-                    for (const w of workers) {
-                        total++;
-                        const isAlive = w.alive !== undefined ? w.alive : (w.status === 'active');
-                        if (isAlive) online++;
-                        const [hr, unit] = formatHashrate(w.hashrate || 0);
-                        const status = isAlive ? '<span class="status-online">Online</span>' : '<span class="status-offline">Offline</span>';
-                        const lastSeen = w.lastsubmit ? formatDateTime(w.lastsubmit) : 'Never';
-                        const workerName = w.worker || w.name || 'Unknown';
-                        html += `<tr class="border-b border-gray-800">
-                            <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
-                            <td class="py-3 pr-4 text-gray-400">${algo}</td>
-                            <td class="py-3 pr-4 font-mono">${hr} ${unit}</td>
-                            <td class="py-3 pr-4">${status}</td>
-                            <td class="py-3 text-xs text-gray-400">${lastSeen}</td>
-                        </tr>`;
-                    }
-                }
-                list.innerHTML = html || '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
-                document.getElementById('workers-status').textContent = `${online} online / ${total} total`;
-                document.getElementById('worker-update').textContent = formatTimeShort(new Date());
-            } catch (e) { console.error('Workers error:', e); }
-        }
-
         async function updatePayments() {
             try {
                 const res = await fetch('/api/payments?t=' + Date.now());
@@ -299,7 +345,7 @@
                 }
 
                 let html = '', total = 0;
-                const currency = payments[0]?.coin || 'BTC';
+                const currency = payments[0]?.coin || payments[0]?.currency || 'BTC';
                 for (const p of payments) {
                     total += p.amount || 0;
                     const txid = p.txid ? p.txid.substring(0, 8) + '...' : 'N/A';
@@ -321,7 +367,6 @@
                 const res = await fetch('/api/history?t=' + Date.now());
                 const history = await res.json();
                 
-                // ✅ History ใช้เวลา 24h UTC+7
                 const labels = history.map(h => formatTimeShort(h.time));
                 
                 hashrateChart.data.labels = labels;
@@ -370,10 +415,10 @@
         updateAlertStatus();
 
         // Auto refresh
-        setInterval(updateStats, 10000);      // 10 วิ (เร็วขึ้นเพื่อดูผล)
+        setInterval(updateStats, 10000);
         setInterval(updateWorkers, 30000);
         setInterval(updatePayments, 300000);
-        setInterval(updateCharts, 10000);     // 10 วิ ( sync กับ stats)
+        setInterval(updateCharts, 10000);
     </script>
 </body>
 </html>
