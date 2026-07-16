@@ -63,7 +63,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.2.1")
+app = FastAPI(title="zpool Monitor", version="1.2.2")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -71,7 +71,6 @@ state = {
     "stats": None,
     "workers": {},
     "payments": [],
-    "blocks": [],
     "max_hashrate": 0,
     "last_alert_sent": {},
     "history": [],
@@ -118,18 +117,6 @@ async def fetch_zpool_stats() -> dict:
         }
 
 
-async def fetch_blocks_found() -> list:
-    async with httpx.AsyncClient(timeout=10, headers=HEADERS) as client:
-        r = await client.get(f"{ZPOOL_API}/blocks")
-        if "application/json" not in r.headers.get("content-type", ""):
-            return []
-        r.raise_for_status()
-        data = r.json()
-        if isinstance(data, dict):
-            return data.get("blocks", [])[:20]
-        return data[:20] if isinstance(data, list) else []
-
-
 async def send_discord(title: str, message: str, color: int = 15158332):
     if not config["notifications"]["discord"]["enabled"]:
         return
@@ -164,9 +151,7 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
     if not topic:
         return
 
-    # ✅ แก้ปัญหา Illegal header value:
-    # 1. .strip() ลบช่องว่างหัวท้ายที่อาจหลุดมา
-    # 2. .encode('ascii', 'ignore').decode('ascii') บังคับให้ Header เป็น ASCII ล้วนๆ 100%
+    # บังคับให้ Header เป็น ASCII ล้วนๆ ไม่มีช่องว่างนำหน้า
     safe_title = str(title).strip().encode('ascii', 'ignore').decode('ascii')
 
     headers = {
@@ -179,7 +164,6 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
 
     try:
         async with httpx.AsyncClient() as client:
-            # Body ยังคงเป็น UTF-8 ได้ปกติ ไม่มีปัญหา
             await client.post(
                 f"{server}/{topic}",
                 content=str(message).encode('utf-8'),
@@ -195,7 +179,7 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
 async def send_alert(title: str, message: str, alert_type: str = "warning"):
     now = datetime.utcnow().timestamp()
     last = state["last_alert_sent"].get(alert_type, 0)
-    if now - last < 300:  # anti-spam 5 mins
+    if now - last < 300:
         return
     state["last_alert_sent"][alert_type] = now
     
@@ -210,7 +194,6 @@ async def check_alerts(stats: dict):
     alerts_cfg = config["alerts"]
     currency = stats.get("currency", "BTC")
     
-    # ✅ ข้อความภาษาอังกฤษล้วน ไม่มีช่องว่างนำหน้า
     if alerts_cfg["worker_offline"] and stats.get("worker", 0) == 0:
         await send_alert(
             "WARNING: No Workers Online",
@@ -236,11 +219,6 @@ async def background_poller():
             
             state["workers"] = {"SHA-256": stats.get("miners", [])}
             state["payments"] = stats.get("payouts", [])
-            
-            try:
-                state["blocks"] = await fetch_blocks_found()
-            except Exception as e:
-                logger.error(f"Blocks fetch error: {str(e)}")
             
             state["history"].append({
                 "time": datetime.utcnow().isoformat(),
@@ -294,11 +272,6 @@ async def api_workers():
 @app.get("/api/payments")
 async def api_payments():
     return state.get("payments", [])
-
-
-@app.get("/api/blocks")
-async def api_blocks():
-    return state.get("blocks", [])
 
 
 @app.get("/api/history")

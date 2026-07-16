@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="th">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -27,7 +27,7 @@
         <!-- Header -->
         <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
             <div>
-                <h1 class="text-3xl font-bold">⛏️ zpool Monitor</h1>
+                <h1 class="text-3xl font-bold">zpool Monitor</h1>
                 <p class="text-sm text-gray-400 mt-1">
                     Wallet: <span id="wallet-display" class="font-mono text-gray-300">Loading...</span>
                     <span id="currency-badge" class="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">-</span>
@@ -42,57 +42,31 @@
         <!-- Stats Grid -->
         <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
             <div class="card glow">
-                <div class="stat-label">💰 Balance</div>
+                <div class="stat-label">Balance</div>
                 <div id="balance" class="stat-value">-</div>
                 <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
             </div>
             <div class="card">
-                <div class="stat-label">⚡ Hashrate</div>
+                <div class="stat-label">Hashrate</div>
                 <div id="hashrate" class="stat-value">-</div>
                 <div id="hashrate-unit" class="text-xs text-gray-400 mt-1">H/s</div>
             </div>
             <div class="card">
-                <div class="stat-label">👷 Workers</div>
+                <div class="stat-label">Workers</div>
                 <div id="workers" class="stat-value">-</div>
                 <div id="workers-status" class="text-xs text-gray-400 mt-1">-</div>
             </div>
             <div class="card">
-                <div class="stat-label">📈 Paid 24h</div>
+                <div class="stat-label">Paid 24h</div>
                 <div id="paid24h" class="stat-value">-</div>
                 <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
-            </div>
-        </div>
-
-        <!-- Blocks Found -->
-        <div class="card mb-8">
-            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-                <h3 class="text-lg font-semibold">🧱 Blocks Found (Your Shares)</h3>
-                <span class="text-sm text-gray-400">Total: <span id="total-blocks" class="text-green-400 font-mono">0</span></span>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead>
-                        <tr class="text-left text-gray-400 border-b border-gray-700">
-                            <th class="pb-2 pr-4">Height</th>
-                            <th class="pb-2 pr-4">Algo</th>
-                            <th class="pb-2 pr-4">Coin</th>
-                            <th class="pb-2 pr-4">Your Reward</th>
-                            <th class="pb-2 pr-4">Status</th>
-                            <th class="pb-2 pr-4">Confirms</th>
-                            <th class="pb-2">Time</th>
-                        </tr>
-                    </thead>
-                    <tbody id="blocks-list">
-                        <tr><td colspan="7" class="py-4 text-center text-gray-500">Loading...</td></tr>
-                    </tbody>
-                </table>
             </div>
         </div>
 
         <!-- Workers -->
         <div class="card mb-8">
             <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-                <h3 class="text-lg font-semibold">👷 Workers</h3>
+                <h3 class="text-lg font-semibold">Workers</h3>
                 <span class="text-sm text-gray-400">Last: <span id="worker-update">-</span></span>
             </div>
             <div class="overflow-x-auto">
@@ -116,11 +90,11 @@
         <!-- Charts -->
         <div class="grid md:grid-cols-2 gap-4 mb-8">
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">⚡ Hashrate History</h3>
+                <h3 class="text-lg font-semibold mb-4">Hashrate History</h3>
                 <canvas id="hashrateChart" height="150"></canvas>
             </div>
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">💰 Balance History</h3>
+                <h3 class="text-lg font-semibold mb-4">Balance History</h3>
                 <canvas id="balanceChart" height="150"></canvas>
             </div>
         </div>
@@ -128,7 +102,7 @@
         <!-- Payments + Mining Info -->
         <div class="grid md:grid-cols-2 gap-4 mb-8">
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">💸 Recent Payments</h3>
+                <h3 class="text-lg font-semibold mb-4">Recent Payments</h3>
                 <div id="payment-list" class="space-y-2">
                     <div class="text-center text-gray-500 py-4">Loading...</div>
                 </div>
@@ -138,7 +112,7 @@
             </div>
 
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">⛏️ Mining Info</h3>
+                <h3 class="text-lg font-semibold mb-4">Mining Info</h3>
                 <div class="space-y-2 text-sm">
                     <div class="flex justify-between py-2 border-b border-gray-800">
                         <span class="text-gray-400">Currency</span>
@@ -170,13 +144,13 @@
 
         <!-- Alert Status -->
         <div class="card mb-8">
-            <h3 class="text-lg font-semibold mb-4">🔔 Alert Channels</h3>
+            <h3 class="text-lg font-semibold mb-4">Alert Channels</h3>
             <div id="alert-status" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
         </div>
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.0.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.2.2 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -213,7 +187,7 @@
 
         function formatTime(ts) {
             if (!ts) return '-';
-            return new Date(ts * 1000).toLocaleString('th-TH');
+            return new Date(ts * 1000).toLocaleString('en-US');
         }
 
         async function updateStats() {
@@ -242,7 +216,7 @@
                 const [maxHr, maxUnit] = formatHashrate(d.max_hashrate);
                 document.getElementById('max-hashrate').textContent = `${maxHr} ${maxUnit}`;
 
-                document.getElementById('last-update').textContent = new Date(d.last_update).toLocaleString('th-TH');
+                document.getElementById('last-update').textContent = new Date(d.last_update).toLocaleString('en-US');
 
             } catch (e) {
                 console.error('Stats error:', e);
@@ -267,12 +241,15 @@
                     if (!Array.isArray(workers)) continue;
                     for (const w of workers) {
                         total++;
-                        if (w.alive) online++;
+                        // zpool API ใช้ field name ที่อาจต่างกัน ตรวจสอบหลายแบบ
+                        const isAlive = w.alive !== undefined ? w.alive : (w.status === 'active');
+                        if (isAlive) online++;
                         const [hr, unit] = formatHashrate(w.hashrate || 0);
-                        const status = w.alive ? '<span class="status-online">● Online</span>' : '<span class="status-offline">● Offline</span>';
+                        const status = isAlive ? '<span class="status-online">Online</span>' : '<span class="status-offline">Offline</span>';
                         const lastSeen = w.lastsubmit ? formatTime(w.lastsubmit) : 'Never';
+                        const workerName = w.worker || w.name || 'Unknown';
                         html += `<tr class="border-b border-gray-800">
-                            <td class="py-3 pr-4 font-mono text-blue-400">${w.worker || 'Unknown'}</td>
+                            <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
                             <td class="py-3 pr-4 text-gray-400">${algo}</td>
                             <td class="py-3 pr-4 font-mono">${hr} ${unit}</td>
                             <td class="py-3 pr-4">${status}</td>
@@ -281,8 +258,8 @@
                     }
                 }
                 list.innerHTML = html || '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
-                document.getElementById('workers-status').textContent = `${online} online • ${total - online} offline`;
-                document.getElementById('worker-update').textContent = new Date().toLocaleTimeString('th-TH');
+                document.getElementById('workers-status').textContent = `${online} online / ${total} total`;
+                document.getElementById('worker-update').textContent = new Date().toLocaleTimeString('en-US');
             } catch (e) { console.error('Workers error:', e); }
         }
 
@@ -298,68 +275,28 @@
                 }
 
                 let html = '', total = 0;
+                const currency = payments[0]?.coin || 'BTC';
                 for (const p of payments) {
                     total += p.amount || 0;
-                    const coin = p.coin || 'BTC';
                     const txid = p.txid ? p.txid.substring(0, 8) + '...' : 'N/A';
-                    html += `<div class="flex justify-between p-2 bg-gray-800/50 rounded">
+                    html += `<div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
                         <div>
-                            <div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${coin}</div>
+                            <div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${currency}</div>
                             <div class="text-xs text-gray-400">${formatTime(p.time)}</div>
                         </div>
-                        <a href="#" class="tx-link text-xs font-mono self-center">${txid}</a>
+                        <a href="#" class="tx-link text-xs font-mono">${txid}</a>
                     </div>`;
                 }
                 list.innerHTML = html;
-                document.getElementById('total-paid').textContent = `${total.toFixed(8)} ${payments[0]?.coin || 'BTC'}`;
+                document.getElementById('total-paid').textContent = `${total.toFixed(8)} ${currency}`;
             } catch (e) { console.error('Payments error:', e); }
-        }
-
-        async function updateBlocks() {
-            try {
-                const res = await fetch('/api/blocks');
-                const blocks = await res.json();
-                const list = document.getElementById('blocks-list');
-                const totalEl = document.getElementById('total-blocks');
-                
-                if (!blocks || blocks.length === 0) {
-                    list.innerHTML = '<tr><td colspan="7" class="py-4 text-center text-gray-500">No blocks found yet</td></tr>';
-                    totalEl.textContent = '0';
-                    return;
-                }
-
-                let html = '', confirmed = 0;
-                for (const b of blocks) {
-                    let status = '', cls = '';
-                    const conf = b.confirmations || 0;
-                    if (b.category === 'orphan' || b.status === 'orphaned') {
-                        status = '❌ Orphaned'; cls = 'text-red-400';
-                    } else if (b.category === 'immature' || conf < 100) {
-                        status = '⏳ Immature'; cls = 'text-yellow-400';
-                    } else {
-                        status = '✅ Confirmed'; cls = 'text-green-400';
-                        confirmed++;
-                    }
-                    html += `<tr class="border-b border-gray-800">
-                        <td class="py-3 pr-4 font-mono text-blue-400">${b.height || 'N/A'}</td>
-                        <td class="py-3 pr-4 text-gray-400">${b.algo || '-'}</td>
-                        <td class="py-3 pr-4 font-mono">${b.coin || '-'}</td>
-                        <td class="py-3 pr-4 font-mono text-green-400">${(b.amount || 0).toFixed(8)}</td>
-                        <td class="py-3 pr-4 ${cls} font-semibold">${status}</td>
-                        <td class="py-3 pr-4 font-mono">${conf}</td>
-                        <td class="py-3 text-xs text-gray-400">${formatTime(b.time)}</td>
-                    </tr>`;
-                }
-                list.innerHTML = html;
-                totalEl.textContent = `${confirmed} confirmed / ${blocks.length} total`;
-            } catch (e) { console.error('Blocks error:', e); }
         }
 
         async function updateCharts() {
             try {
                 const res = await fetch('/api/history');
                 const history = await res.json();
-                const labels = history.map(h => new Date(h.time).toLocaleTimeString('th-TH', {hour:'2-digit', minute:'2-digit'}));
+                const labels = history.map(h => new Date(h.time).toLocaleTimeString('en-US', {hour:'2-digit', minute:'2-digit'}));
                 
                 hashrateChart.data.labels = labels;
                 hashrateChart.data.datasets[0].data = history.map(h => h.hashrate);
@@ -381,11 +318,11 @@
                 let html = '';
                 html += `<div class="p-2 ${cfg.notifications.discord.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
                     <div>Discord</div>
-                    <div class="text-xs ${cfg.notifications.discord.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.discord.enabled ? '✓ Enabled' : '✗ Disabled'}</div>
+                    <div class="text-xs ${cfg.notifications.discord.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.discord.enabled ? 'Enabled' : 'Disabled'}</div>
                 </div>`;
                 html += `<div class="p-2 ${cfg.notifications.ntfy.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
                     <div>ntfy</div>
-                    <div class="text-xs ${cfg.notifications.ntfy.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.ntfy.enabled ? '✓ Enabled' : '✗ Disabled'}</div>
+                    <div class="text-xs ${cfg.notifications.ntfy.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.ntfy.enabled ? 'Enabled' : 'Disabled'}</div>
                 </div>`;
                 html += `<div class="p-2 bg-blue-500/10 rounded">
                     <div>Worker Offline</div>
@@ -393,7 +330,7 @@
                 </div>`;
                 html += `<div class="p-2 bg-blue-500/10 rounded">
                     <div>Balance Goal</div>
-                    <div class="text-xs text-blue-400">≥ ${cfg.alerts.min_balance}</div>
+                    <div class="text-xs text-blue-400">>= ${cfg.alerts.min_balance}</div>
                 </div>`;
                 el.innerHTML = html;
             } catch (e) { console.error('Config error:', e); }
@@ -403,7 +340,6 @@
         updateStats();
         updateWorkers();
         updatePayments();
-        updateBlocks();
         updateCharts();
         updateAlertStatus();
 
@@ -411,7 +347,6 @@
         setInterval(updateStats, 30000);
         setInterval(updateWorkers, 30000);
         setInterval(updatePayments, 300000);
-        setInterval(updateBlocks, 300000);
         setInterval(updateCharts, 60000);
     </script>
 </body>
