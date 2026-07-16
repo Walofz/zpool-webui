@@ -1,5 +1,11 @@
 FROM python:3.11-slim
 
+# ✅ ตั้งค่า locale และ encoding ให้เป็น UTF-8
+ENV LANG=C.UTF-8
+ENV LC_ALL=C.UTF-8
+ENV PYTHONIOENCODING=utf-8
+ENV PYTHONUTF8=1
+
 WORKDIR /app
 
 COPY requirements.txt .
