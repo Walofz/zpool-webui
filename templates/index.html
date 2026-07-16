@@ -121,12 +121,8 @@
                         <span id="mining-currency" class="font-mono text-blue-400">-</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-gray-800">
-                        <span class="text-gray-400">Est. Hashrate</span>
-                        <span id="est-hashrate" class="font-mono">-</span>
-                    </div>
-                    <div class="flex justify-between py-2 border-b border-gray-800">
                         <span class="text-gray-400">Max SPM</span>
-                        <span id="max-spm" class="font-mono">-</span>
+                        <span id="max-spm" class="font-mono text-green-400">-</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-gray-800">
                         <span class="text-gray-400">Unsold</span>
@@ -156,7 +152,7 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.6.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.7.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -207,14 +203,6 @@
             data: { labels: [], datasets: [{ data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
             options: chartOpts
         });
-
-        function formatHashrate(h) {
-            if (h >= 1e12) return [(h/1e12).toFixed(2), 'TH/s'];
-            if (h >= 1e9) return [(h/1e9).toFixed(2), 'GH/s'];
-            if (h >= 1e6) return [(h/1e6).toFixed(2), 'MH/s'];
-            if (h >= 1e3) return [(h/1e3).toFixed(2), 'KH/s'];
-            return [h.toFixed(2), 'H/s'];
-        }
 
         async function updateWorkers() {
             try {
@@ -285,16 +273,9 @@
                 const totalSPM = d.spm || 0;
                 document.getElementById('total-spm').textContent = totalSPM.toFixed(1);
                 
-                // ✅ แสดง Estimated Hashrate (คำนวณจาก SPM)
-                const [estHr, estUnit] = formatHashrate(d.hashrate || 0);
-                document.getElementById('est-hashrate').textContent = `${estHr} ${estUnit}`;
-                
                 // ✅ แสดง Max SPM
                 const maxSPM = d.max_spm || 0;
                 document.getElementById('max-spm').textContent = maxSPM.toFixed(1);
-
-                const [maxHr, maxUnit] = formatHashrate(d.max_hashrate || 0);
-                document.getElementById('max-hashrate').textContent = `${maxHr} ${maxUnit}`;
 
                 document.getElementById('last-update').textContent = formatDateTime(d.last_update);
 
@@ -347,7 +328,7 @@
                 
                 const labels = history.map(h => formatTimeShort(h.time));
                 
-                // ✅ SPM Chart (แทน Hashrate)
+                // ✅ SPM Chart
                 spmChart.data.labels = labels;
                 spmChart.data.datasets[0].data = history.map(h => h.spm || 0);
                 spmChart.update('none');

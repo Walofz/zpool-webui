@@ -36,7 +36,7 @@ config = {
     "alerts": {
         "worker_offline": get_env("ALERT_WORKER_OFFLINE", True, bool),
         "min_balance": get_env("ALERT_MIN_BALANCE", 0.01, float),
-        "hashrate_drop_percent": get_env("ALERT_HASHRATE_DROP_PERCENT", 50, float),
+        "spm_drop_percent": get_env("SPM_DROP_PERCENT", 50, float),
     },
     "notifications": {
         "discord": {
@@ -63,7 +63,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.6.0")
+app = FastAPI(title="zpool Monitor", version="1.7.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -71,7 +71,6 @@ state = {
     "stats": None,
     "workers": {},
     "payments": [],
-    "max_hashrate": 0,
     "max_spm": 0,
     "last_alert_sent": {},
     "history": [],
@@ -122,10 +121,6 @@ async def fetch_zpool_stats() -> dict:
                     "alive": spm > 0
                 })
         
-        # ✅ ประมาณการ Hashrate จาก SPM (สำหรับ SHA-256)
-        # สูตร: Hashrate ≈ SPM × 2^32 / 60
-        estimated_hashrate = total_spm * (2**32) / 60 if total_spm > 0 else 0
-        
         # ✅ ดึง Estimate จาก API
         estimate_24h = (
             float(data.get("estimate", 0)) or
@@ -159,7 +154,6 @@ async def fetch_zpool_stats() -> dict:
             "unpaid": float(data.get("unpaid", 0)),
             "paid24h": float(data.get("paid24h", 0)),
             "total_paid": float(data.get("total", 0)),
-            "hashrate": estimated_hashrate,
             "spm": total_spm,
             "worker": worker_count,
             "estimate": estimate_24h,
@@ -258,6 +252,17 @@ async def check_alerts(stats: dict):
             f"Balance: {balance:.8f} {currency}\nTarget: {alerts_cfg['min_balance']} {currency}",
             "info"
         )
+    
+    # ✅ Alert เมื่อ SPM ลดลง
+    spm = stats.get("spm", 0)
+    if state["max_spm"] > 0:
+        drop_percent = ((state["max_spm"] - spm) / state["max_spm"]) * 100
+        if drop_percent >= alerts_cfg["spm_drop_percent"]:
+            await send_alert(
+                "WARNING: SPM Dropped",
+                f"SPM dropped {drop_percent:.1f}%\nCurrent: {spm:.1f}\nMax: {state['max_spm']:.1f}",
+                "warning"
+            )
 
 
 async def background_poller():
@@ -270,16 +275,13 @@ async def background_poller():
             state["workers"] = stats.get("workers_raw", {})
             state["payments"] = stats.get("payouts", [])
             
-            # อัปเดต Max SPM และ Hashrate
+            # อัปเดต Max SPM
             if stats["spm"] > state["max_spm"]:
                 state["max_spm"] = stats["spm"]
-            if stats["hashrate"] > state["max_hashrate"]:
-                state["max_hashrate"] = stats["hashrate"]
             
-            # ✅ เก็บ History ด้วย SPM แทน Hashrate
+            # ✅ เก็บ History เฉพาะ SPM และ Balance
             state["history"].append({
                 "time": datetime.utcnow().isoformat(),
-                "hashrate": stats["hashrate"],
                 "spm": stats["spm"],
                 "balance": stats["balance"],
                 "workers": stats["worker"]
@@ -287,7 +289,7 @@ async def background_poller():
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: SPM={stats['spm']:.1f}, HR={stats['hashrate']:.2f}, Bal={stats['balance']:.8f} {stats['currency']}, Workers={stats['worker']}")
+            logger.info(f"Updated: SPM={stats['spm']:.1f}, Bal={stats['balance']:.8f} {stats['currency']}, Workers={stats['worker']}")
             
         except Exception as e:
             logger.error(f"Polling error: {str(e)}")
@@ -317,7 +319,6 @@ async def api_stats():
         return {"error": "No data yet"}
     return {
         **state["stats"],
-        "max_hashrate": state["max_hashrate"],
         "max_spm": state["max_spm"],
         "last_update": datetime.utcnow().isoformat()
     }
