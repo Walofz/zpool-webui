@@ -5,7 +5,6 @@ from datetime import datetime
 import sys
 import io
 
-
 import httpx
 from fastapi import FastAPI, Request
 from fastapi.responses import HTMLResponse
@@ -21,9 +20,15 @@ os.environ['PYTHONIOENCODING'] = 'utf-8'
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s'
+    format='%(asctime)s - %(levelname)s - %(message)s',
+    force=True
 )
 logger = logging.getLogger(__name__)
+
+if not any(isinstance(handler, logging.StreamHandler) for handler in logger.handlers):
+    handler = logging.StreamHandler(sys.stdout)
+    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
+    logger.addHandler(handler)
 
 # Helper: get env with type casting
 def get_env(key: str, default=None, cast_type=str):
@@ -37,6 +42,12 @@ def get_env(key: str, default=None, cast_type=str):
     elif cast_type == float:
         return float(value)
     return value
+
+
+def make_ascii_safe(value: str) -> str:
+    if value is None:
+        return ""
+    return str(value).encode("ascii", "ignore").decode("ascii")
 
 # Configuration
 config = {
@@ -175,9 +186,10 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
     if not topic:
         return
 
-    # ✅ บังคับใช้ UTF-8 อย่างชัดเจน
+    # ✅ บังคับใช้ UTF-8 สำหรับ body และทำ header เป็น ASCII-safe เพื่อไม่ให้ httpx/ntfy error จาก emoji
+    safe_title = make_ascii_safe(title)
     headers = {
-        "Title": title,
+        "Title": safe_title,
         "Priority": str(priority),
         "Tags": "warning" if priority >= 4 else "info"
     }
@@ -187,10 +199,9 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
 
     try:
         async with httpx.AsyncClient() as client:
-            # ✅ บังคับ encode เป็น UTF-8 และส่งเป็น bytes
             await client.post(
                 f"{server}/{topic}",
-                content=message.encode('utf-8'),  # บังคับ encode
+                content=message.encode('utf-8', errors='replace'),
                 headers=headers,
                 auth=auth_tuple,
                 timeout=10
@@ -211,12 +222,12 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
         clean_message = emoji_pattern.sub(r'', message)
         clean_title = emoji_pattern.sub(r'', title)
         
-        headers["Title"] = clean_title
+        headers["Title"] = make_ascii_safe(clean_title)
         
         async with httpx.AsyncClient() as client:
             await client.post(
                 f"{server}/{topic}",
-                content=clean_message.encode('utf-8'),
+                content=clean_message.encode('utf-8', errors='replace'),
                 headers=headers,
                 auth=auth_tuple,
                 timeout=10
