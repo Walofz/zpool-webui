@@ -75,9 +75,9 @@
                         <tr class="text-left text-gray-400 border-b border-gray-700">
                             <th class="pb-2 pr-4">Name</th>
                             <th class="pb-2 pr-4">Algo</th>
-                            <th class="pb-2 pr-4">Hashrate</th>
+                            <th class="pb-2 pr-4">SPM (Shares/Min)</th>
                             <th class="pb-2 pr-4">Status</th>
-                            <th class="pb-2">Last Seen</th>
+                            <th class="pb-2">Accepted</th>
                         </tr>
                     </thead>
                     <tbody id="worker-list">
@@ -150,43 +150,31 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.4.1 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.5.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
     <script>
-        // ✅ Helper: จัดรูปแบบเวลา 24h UTC+7 (ไทย)
         function formatDateTime(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return date.toLocaleString('th-TH', {
                 timeZone: 'Asia/Bangkok',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
             });
         }
 
-        // ✅ Helper: จัดรูปแบบเวลาสั้น (HH:MM) สำหรับกราฟ
         function formatTimeShort(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return date.toLocaleString('th-TH', {
-                timeZone: 'Asia/Bangkok',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
+                timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false
             });
         }
 
-        // Chart setup
         const chartOpts = {
-            responsive: true,
-            animation: { duration: 0 },
+            responsive: true, animation: { duration: 0 },
             plugins: { legend: { display: false } },
             scales: {
                 y: { ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
@@ -214,7 +202,7 @@
             return [h.toFixed(2), 'H/s'];
         }
 
-        // ✅ รองรับ multiple field names สำหรับ workers
+        // ✅ แก้ไขแล้ว: แสดง SPM และใช้ field ID, algo จาก API จริง
         async function updateWorkers() {
             try {
                 const res = await fetch('/api/workers?t=' + Date.now());
@@ -234,48 +222,12 @@
                     
                     for (const w of workers) {
                         total++;
-                        
-                        // ✅ ตรวจสอบ status จากหลาย field
-                        const isAlive = (
-                            w.alive === true || 
-                            w.status === 'active' || 
-                            w.status === 'online' || 
-                            w.status === 'alive' ||
-                            (w.hr && parseFloat(w.hr) > 0) ||
-                            (w.hashrate && parseFloat(w.hashrate) > 0)
-                        );
-                        
+                        const isAlive = w.alive === true || w.spm > 0;
                         if (isAlive) online++;
                         
-                        // ✅ รองรับ hashrate จากหลาย field
-                        const hashrate = parseFloat(
-                            w.hashrate || w.hr || w.hash_rate || w.hashRate || 0
-                        );
-                        const [hr, unit] = formatHashrate(hashrate);
-                        
-                        // ✅ รองรับ name จากหลาย field
-                        const workerName = (
-                            w.worker || 
-                            w.name || 
-                            w.worker_name || 
-                            w.workerName || 
-                            w.id ||
-                            w.miner ||
-                            'Unknown'
-                        );
-                        
-                        // ✅ รองรับ last submit time จากหลาย field
-                        const lastSubmit = (
-                            w.lastsubmit || 
-                            w.last_submit || 
-                            w.lastSubmit || 
-                            w.lastseen || 
-                            w.last_seen || 
-                            w.lastSeen ||
-                            w.time ||
-                            w.updated
-                        );
-                        const lastSeen = lastSubmit ? formatDateTime(lastSubmit) : 'Never';
+                        const spm = w.spm || 0;
+                        const accepted = w.accepted || 0;
+                        const workerName = w.worker || 'Unknown';
                         
                         const statusClass = isAlive ? 'status-online' : 'status-offline';
                         const statusText = isAlive ? 'Online' : 'Offline';
@@ -283,9 +235,9 @@
                         html += `<tr class="border-b border-gray-800">
                             <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
                             <td class="py-3 pr-4 text-gray-400">${algo}</td>
-                            <td class="py-3 pr-4 font-mono">${hr} ${unit}</td>
+                            <td class="py-3 pr-4 font-mono">${spm.toFixed(1)}</td>
                             <td class="py-3 pr-4"><span class="${statusClass}">${statusText}</span></td>
-                            <td class="py-3 text-xs text-gray-400">${lastSeen}</td>
+                            <td class="py-3 text-xs text-gray-400 font-mono">${accepted.toLocaleString()}</td>
                         </tr>`;
                     }
                 }
@@ -294,9 +246,7 @@
                 document.getElementById('workers-status').textContent = `${online} online / ${total} total`;
                 document.getElementById('worker-update').textContent = formatTimeShort(new Date());
                 
-            } catch (e) { 
-                console.error('Workers error:', e); 
-            }
+            } catch (e) { console.error('Workers error:', e); }
         }
 
         async function updateStats() {
@@ -366,7 +316,6 @@
             try {
                 const res = await fetch('/api/history?t=' + Date.now());
                 const history = await res.json();
-                
                 const labels = history.map(h => formatTimeShort(h.time));
                 
                 hashrateChart.data.labels = labels;
@@ -407,14 +356,12 @@
             } catch (e) { console.error('Config error:', e); }
         }
 
-        // Initial load
         updateStats();
         updateWorkers();
         updatePayments();
         updateCharts();
         updateAlertStatus();
 
-        // Auto refresh
         setInterval(updateStats, 10000);
         setInterval(updateWorkers, 30000);
         setInterval(updatePayments, 300000);
