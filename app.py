@@ -16,7 +16,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Helper: แปลงค่าเป็น float แบบปลอดภัย (รองรับ dict/list จาก API)
 def safe_float(val, default=0.0):
     try:
         if isinstance(val, (int, float)):
@@ -31,7 +30,6 @@ def safe_float(val, default=0.0):
     except (ValueError, TypeError):
         return default
 
-# Helper: get env with type casting
 def get_env(key: str, default=None, cast_type=str):
     value = os.getenv(key, default)
     if value is None:
@@ -44,7 +42,6 @@ def get_env(key: str, default=None, cast_type=str):
         return float(value)
     return value
 
-# Configuration
 config = {
     "wallet": get_env("ZPOOL_WALLET", ""),
     "refresh_interval": get_env("REFRESH_INTERVAL", 60, int),
@@ -78,10 +75,9 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="2.1.0")
+app = FastAPI(title="zpool Monitor", version="2.1.1")
 templates = Jinja2Templates(directory="templates")
 
-# State
 state = {
     "stats": None,
     "workers": {},
@@ -140,7 +136,18 @@ async def fetch_zpool_stats() -> dict:
                 })
         
         currency = (data.get("currency") or "BTC").upper()
-        payouts = data.get("payouts", [])
+        
+        # ✅ แก้ไข: รองรับ field "tx" (ไม่ใช่ "txid") และแปลง amount เป็น float
+        raw_payouts = data.get("payouts", [])
+        payouts = []
+        for p in raw_payouts:
+            payouts.append({
+                "time": p.get("time", 0),
+                "amount": safe_float(p.get("amount", 0)),  # ✅ แปลง string → float
+                "txid": p.get("tx") or p.get("txid", ""),  # ✅ รองรับทั้ง "tx" และ "txid"
+                "coin": currency
+            })
+        
         worker_count = sum(len(v) for v in workers_dict.values())
         
         return {
@@ -243,7 +250,7 @@ async def check_alerts(stats: dict):
             "warning"
         )
     
-    # 2. Payment Alert - เช็คเมื่อมี payment ใหม่
+    # 2. Payment Alert
     if alerts_cfg["payment_alert"]:
         payments = stats.get("payouts", [])
         if payments:
@@ -299,7 +306,7 @@ async def background_poller():
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: HR={stats['hashrate']:.2f}, SPM={stats['spm']:.1f}, Bal={stats['balance']:.8f} {stats['currency']}")
+            logger.info(f"Updated: HR={stats['hashrate']:.2f}, SPM={stats['spm']:.1f}, Bal={stats['balance']:.8f} {stats['currency']}, Payouts={len(stats.get('payouts', []))}")
             
         except Exception as e:
             logger.error(f"Polling error: {str(e)}")

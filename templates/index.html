@@ -148,7 +148,7 @@
         </div>
 
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v2.1.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v2.1.1 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -306,24 +306,29 @@
             try {
                 const res = await fetch('/api/payments?t=' + Date.now());
                 const payments = await res.json();
+                console.log('Payments data:', payments);
+                
                 const list = document.getElementById('payment-list');
                 const totalPaid = document.getElementById('total-paid');
                 if (!list || !totalPaid) return;
                 
                 if (!payments || payments.length === 0) {
                     list.innerHTML = '<div class="text-center text-gray-500 py-4">No payments yet</div>';
+                    totalPaid.textContent = '-';
                     return;
                 }
 
                 let html = '', total = 0;
-                const currency = payments[0]?.coin || payments[0]?.currency || 'BTC';
+                const currency = payments[0]?.coin || 'DGB';
                 for (const p of payments) {
-                    total += p.amount || 0;
-                    const txid = p.txid ? p.txid.substring(0, 8) + '...' : 'N/A';
+                    const amount = parseFloat(p.amount) || 0;
+                    total += amount;
+                    const txid = p.txid || 'N/A';
+                    const shortTxid = txid.length > 16 ? txid.substring(0, 16) + '...' : txid;
                     html += `<div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
-                        <div><div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${currency}</div>
+                        <div><div class="font-mono text-sm text-green-400">+ ${amount.toFixed(8)} ${currency}</div>
                         <div class="text-xs text-gray-400">${formatDateTime(p.time)}</div></div>
-                        <a href="#" class="tx-link text-xs font-mono">${txid}</a>
+                        <a href="#" class="tx-link text-xs font-mono">${shortTxid}</a>
                     </div>`;
                 }
                 list.innerHTML = html;
