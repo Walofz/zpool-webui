@@ -36,7 +36,7 @@ config = {
     "alerts": {
         "worker_offline": get_env("ALERT_WORKER_OFFLINE", True, bool),
         "min_balance": get_env("ALERT_MIN_BALANCE", 0.01, float),
-        "spm_drop_percent": get_env("SPM_DROP_PERCENT", 50, float),
+        "hashrate_drop_percent": get_env("HASHRATE_DROP_PERCENT", 50, float),
     },
     "notifications": {
         "discord": {
@@ -63,7 +63,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.9.0")
+app = FastAPI(title="zpool Monitor", version="2.0.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -71,10 +71,10 @@ state = {
     "stats": None,
     "workers": {},
     "payments": [],
-    "max_spm": 0,
+    "max_hashrate": 0,
     "last_alert_sent": {},
     "history": [],
-    "start_time": datetime.now()  # ✅ ใช้ datetime.now() ธรรมดา (Docker set TZ แล้ว)
+    "start_time": datetime.now()
 }
 
 ZPOOL_API = "https://www.zpool.ca/api"
@@ -99,8 +99,11 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
-        # ✅ DEBUG: Log root keys ให้เห็นชัดๆ ว่า API ส่งอะไรมาบ้าง
-        logger.info(f"API Root keys: {list(data.keys())}")
+        # ✅ ใช้ total_hashrates จาก API โดยตรง (ของจริง!)
+        real_hashrate = float(data.get("total_hashrates", 0))
+        
+        # ✅ ใช้ paidtotal จาก API โดยตรง
+        real_total_paid = float(data.get("paidtotal", 0))
         
         miners = data.get("miners", [])
         
@@ -123,24 +126,11 @@ async def fetch_zpool_stats() -> dict:
                     "alive": spm > 0
                 })
         
-        # ✅ Estimate: zpool.ca API ไม่มี field 'estimate' ใน /walletEX
-        # ใช้ paid24h (เหรียญที่ได้รับจริงใน 24 ชม.) แทน ซึ่งแม่นยำกว่า
-        paid24h = float(data.get("paid24h", 0))
-        
         currency = (
-            data.get("currency") or 
-            data.get("coin") or 
-            data.get("payout_currency") or 
-            "BTC"
+            data.get("currency") or "BTC"
         ).upper()
         
-        payouts = (
-            data.get("payouts") or 
-            data.get("payments") or 
-            data.get("payout_history") or 
-            []
-        )
-        
+        payouts = data.get("payouts", [])
         worker_count = sum(len(v) for v in workers_dict.values())
         
         return {
@@ -149,11 +139,13 @@ async def fetch_zpool_stats() -> dict:
             "unsold": float(data.get("unsold", 0)),
             "balance": float(data.get("balance", 0)),
             "unpaid": float(data.get("unpaid", 0)),
-            "paid24h": paid24h,
-            "total_paid": float(data.get("total", 0)),
+            "paid24h": float(data.get("paid24h", 0)),
+            "total_paid": real_total_paid,  # ✅ ใช้ paidtotal
+            "hashrate": real_hashrate,      # ✅ ใช้ total_hashrates
             "spm": total_spm,
             "worker": worker_count,
-            "estimate": paid24h,  # ✅ ใช้ paid24h เป็น estimate (ของจริงใน 24 ชม.)
+            "estimate": float(data.get("paid24h", 0)), # ใช้ paid24h เป็น Actual 24h
+            "minpay": float(data.get("minpay", 0)),
             "workers_raw": workers_dict,
             "payouts": payouts
         }
@@ -170,7 +162,7 @@ async def send_discord(title: str, message: str, color: int = 15158332):
             "title": title.strip(),
             "description": message.strip(),
             "color": color,
-            "timestamp": datetime.now().isoformat(),  # ✅ ใช้ datetime.now()
+            "timestamp": datetime.now().isoformat(),
             "footer": {"text": "zpool Monitor"}
         }]
     }
@@ -218,7 +210,7 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
 
 
 async def send_alert(title: str, message: str, alert_type: str = "warning"):
-    now = datetime.now().timestamp()  # ✅ ใช้ datetime.now()
+    now = datetime.now().timestamp()
     last = state["last_alert_sent"].get(alert_type, 0)
     if now - last < 300:
         return
@@ -250,13 +242,14 @@ async def check_alerts(stats: dict):
             "info"
         )
     
-    spm = stats.get("spm", 0)
-    if state["max_spm"] > 0:
-        drop_percent = ((state["max_spm"] - spm) / state["max_spm"]) * 100
-        if drop_percent >= alerts_cfg["spm_drop_percent"]:
+    # ✅ Alert เมื่อ Hashrate จริงลดลง
+    hr = stats.get("hashrate", 0)
+    if state["max_hashrate"] > 0 and hr > 0:
+        drop_percent = ((state["max_hashrate"] - hr) / state["max_hashrate"]) * 100
+        if drop_percent >= alerts_cfg["hashrate_drop_percent"]:
             await send_alert(
-                "WARNING: SPM Dropped",
-                f"SPM dropped {drop_percent:.1f}%\nCurrent: {spm:.1f}\nMax: {state['max_spm']:.1f}",
+                "WARNING: Hashrate Dropped",
+                f"Hashrate dropped {drop_percent:.1f}%\nCurrent: {hr:.2f}\nMax: {state['max_hashrate']:.2f}",
                 "warning"
             )
 
@@ -271,11 +264,14 @@ async def background_poller():
             state["workers"] = stats.get("workers_raw", {})
             state["payments"] = stats.get("payouts", [])
             
-            if stats["spm"] > state["max_spm"]:
-                state["max_spm"] = stats["spm"]
+            # ✅ อัปเดต Max Hashrate จากของจริง
+            if stats["hashrate"] > state["max_hashrate"]:
+                state["max_hashrate"] = stats["hashrate"]
             
+            # ✅ เก็บ History ด้วย Hashrate จริง + Balance
             state["history"].append({
-                "time": datetime.now().isoformat(),  # ✅ ใช้ datetime.now()
+                "time": datetime.now().isoformat(),
+                "hashrate": stats["hashrate"],
                 "spm": stats["spm"],
                 "balance": stats["balance"],
                 "workers": stats["worker"]
@@ -283,7 +279,7 @@ async def background_poller():
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: SPM={stats['spm']:.1f}, Bal={stats['balance']:.8f} {stats['currency']}, Workers={stats['worker']}")
+            logger.info(f"Updated: HR={stats['hashrate']:.2f}, SPM={stats['spm']:.1f}, Bal={stats['balance']:.8f} {stats['currency']}")
             
         except Exception as e:
             logger.error(f"Polling error: {str(e)}")
@@ -313,8 +309,8 @@ async def api_stats():
         return {"error": "No data yet"}
     return {
         **state["stats"],
-        "max_spm": state["max_spm"],
-        "last_update": datetime.now().isoformat()  # ✅ ใช้ datetime.now()
+        "max_hashrate": state["max_hashrate"],
+        "last_update": datetime.now().isoformat()
     }
 
 

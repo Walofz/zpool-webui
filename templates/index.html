@@ -47,14 +47,14 @@
                 <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
             </div>
             <div class="card">
+                <div class="stat-label">Hashrate</div>
+                <div id="hashrate" class="stat-value">-</div>
+                <div id="hashrate-unit" class="text-xs text-gray-400 mt-1">H/s</div>
+            </div>
+            <div class="card">
                 <div class="stat-label">Total SPM</div>
                 <div id="total-spm" class="stat-value">-</div>
                 <div class="text-xs text-gray-400 mt-1">Shares/Min</div>
-            </div>
-            <div class="card">
-                <div class="stat-label">Workers</div>
-                <div id="workers" class="stat-value">-</div>
-                <div id="workers-status" class="text-xs text-gray-400 mt-1">-</div>
             </div>
             <div class="card">
                 <div class="stat-label">Paid 24h</div>
@@ -90,9 +90,9 @@
         <!-- Charts -->
         <div class="grid md:grid-cols-2 gap-4 mb-8">
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">SPM History</h3>
-                <div id="chart-spm-info" class="text-xs text-gray-400 mb-2">No data yet</div>
-                <canvas id="spmChart" height="150"></canvas>
+                <h3 class="text-lg font-semibold mb-4">Hashrate History (Real)</h3>
+                <div id="chart-hr-info" class="text-xs text-gray-400 mb-2">No data yet</div>
+                <canvas id="hashrateChart" height="150"></canvas>
             </div>
             <div class="card">
                 <h3 class="text-lg font-semibold mb-4">Balance History</h3>
@@ -121,8 +121,8 @@
                         <span id="mining-currency" class="font-mono text-blue-400">-</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-gray-800">
-                        <span class="text-gray-400">Max SPM</span>
-                        <span id="max-spm" class="font-mono text-green-400">-</span>
+                        <span class="text-gray-400">Max Hashrate</span>
+                        <span id="max-hashrate" class="font-mono text-green-400">-</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-gray-800">
                         <span class="text-gray-400">Unsold</span>
@@ -152,7 +152,7 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.9.0 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v2.0.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
@@ -197,6 +197,14 @@
             return num.toFixed(0);
         }
 
+        function formatHashrate(h) {
+            if (h >= 1e12) return [(h/1e12).toFixed(2), 'TH/s'];
+            if (h >= 1e9) return [(h/1e9).toFixed(2), 'GH/s'];
+            if (h >= 1e6) return [(h/1e6).toFixed(2), 'MH/s'];
+            if (h >= 1e3) return [(h/1e3).toFixed(2), 'KH/s'];
+            return [h.toFixed(2), 'H/s'];
+        }
+
         const chartOpts = {
             responsive: true, animation: { duration: 0 },
             plugins: { legend: { display: false } },
@@ -206,7 +214,7 @@
             }
         };
 
-        const spmChart = new Chart(document.getElementById('spmChart'), {
+        const hashrateChart = new Chart(document.getElementById('hashrateChart'), {
             type: 'line',
             data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
             options: chartOpts
@@ -283,11 +291,18 @@
                 
                 document.querySelectorAll('.currency-unit').forEach(el => el.textContent = currency);
 
+                // ✅ แสดง Hashrate จริง
+                const [hr, unit] = formatHashrate(d.hashrate || 0);
+                document.getElementById('hashrate').textContent = hr;
+                document.getElementById('hashrate-unit').textContent = unit;
+
+                // ✅ แสดง Max Hashrate
+                const [maxHr, maxUnit] = formatHashrate(d.max_hashrate || 0);
+                document.getElementById('max-hashrate').textContent = `${maxHr} ${maxUnit}`;
+
+                // แสดง SPM
                 const totalSPM = d.spm || 0;
                 document.getElementById('total-spm').textContent = totalSPM.toFixed(1);
-                
-                const maxSPM = d.max_spm || 0;
-                document.getElementById('max-spm').textContent = maxSPM.toFixed(1);
 
                 document.getElementById('last-update').textContent = formatDateTime(d.last_update);
 
@@ -331,24 +346,26 @@
                 const res = await fetch('/api/history?t=' + Date.now());
                 const history = await res.json();
                 
-                document.getElementById('chart-spm-info').textContent = `${history.length} data points`;
+                document.getElementById('chart-hr-info').textContent = `${history.length} data points`;
                 document.getElementById('chart-bal-info').textContent = `${history.length} data points`;
                 
                 if (history.length === 0) return;
                 
                 const labels = history.map(h => formatTimeShort(h.time));
                 
-                spmChart.data.labels = labels;
-                spmChart.data.datasets[0].data = history.map(h => h.spm || 0);
-                spmChart.update('none');
+                // ✅ Hashrate Chart (ใช้ของจริงจาก total_hashrates)
+                hashrateChart.data.labels = labels;
+                hashrateChart.data.datasets[0].data = history.map(h => h.hashrate || 0);
+                hashrateChart.update('none');
                 
+                // Balance Chart
                 balanceChart.data.labels = labels;
                 balanceChart.data.datasets[0].data = history.map(h => h.balance || 0);
                 balanceChart.update('none');
                 
             } catch (e) { 
                 console.error('Charts error:', e);
-                document.getElementById('chart-spm-info').textContent = 'Error loading data';
+                document.getElementById('chart-hr-info').textContent = 'Error loading data';
                 document.getElementById('chart-bal-info').textContent = 'Error loading data';
             }
         }
