@@ -1,568 +1,387 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="th">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>zpool Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
-      body {
-        background: #0f172a;
-        color: #e2e8f0;
-        font-family: system-ui, sans-serif;
-      }
-      .card {
-        background: #1e293b;
-        border-radius: 12px;
-        padding: 20px;
-        border: 1px solid #334155;
-      }
-      .stat-value {
-        font-size: 1.8rem;
-        font-weight: bold;
-        color: #10b981;
-        font-family: "Courier New", monospace;
-      }
-      .stat-label {
-        color: #94a3b8;
-        font-size: 0.875rem;
-        margin-bottom: 4px;
-      }
-      .pulse {
-        animation: pulse 2s infinite;
-      }
-      @keyframes pulse {
-        0%,
-        100% {
-          opacity: 1;
-        }
-        50% {
-          opacity: 0.5;
-        }
-      }
-      .glow {
-        box-shadow: 0 0 20px rgba(16, 185, 129, 0.15);
-      }
-      .status-online {
-        color: #10b981;
-      }
-      .status-offline {
-        color: #ef4444;
-      }
-      .tx-link {
-        color: #60a5fa;
-        text-decoration: none;
-      }
-      .tx-link:hover {
-        text-decoration: underline;
-      }
-      table {
-        border-collapse: collapse;
-      }
-      tbody tr:hover {
-        background: rgba(255, 255, 255, 0.03);
-      }
+        body { background: #0f172a; color: #e2e8f0; font-family: system-ui, sans-serif; }
+        .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; }
+        .stat-value { font-size: 1.8rem; font-weight: bold; color: #10b981; font-family: 'Courier New', monospace; }
+        .stat-label { color: #94a3b8; font-size: 0.875rem; margin-bottom: 4px; }
+        .pulse { animation: pulse 2s infinite; }
+        @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+        .glow { box-shadow: 0 0 20px rgba(16, 185, 129, 0.15); }
+        .status-online { color: #10b981; }
+        .status-offline { color: #ef4444; }
+        .tx-link { color: #60a5fa; text-decoration: none; }
+        .tx-link:hover { text-decoration: underline; }
+        table { border-collapse: collapse; }
+        tbody tr:hover { background: rgba(255, 255, 255, 0.03); }
     </style>
-  </head>
-  <body class="min-h-screen p-4 md:p-8">
+</head>
+<body class="min-h-screen p-4 md:p-8">
     <div class="max-w-6xl mx-auto">
-      <!-- Header -->
-      <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
-        <div>
-          <h1 class="text-3xl font-bold">zpool Monitor</h1>
-          <p class="text-sm text-gray-400 mt-1">
-            Wallet:
-            <span id="wallet-display" class="font-mono text-gray-300"
-              >Loading...</span
-            >
-            <span
-              id="currency-badge"
-              class="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs"
-              >-</span
-            >
-          </p>
-        </div>
-        <div
-          id="status-indicator"
-          class="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full"
-        >
-          <span class="w-2 h-2 bg-green-500 rounded-full pulse"></span>
-          <span class="text-sm text-green-400">Live</span>
-        </div>
-      </div>
-
-      <!-- Stats Grid -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
-        <div class="card glow">
-          <div class="stat-label">Balance</div>
-          <div id="balance" class="stat-value">-</div>
-          <div class="text-xs text-gray-400 mt-1">
-            <span class="currency-unit">-</span>
-          </div>
-        </div>
-        <div class="card">
-          <div class="stat-label">Hashrate</div>
-          <div id="hashrate" class="stat-value">-</div>
-          <div id="hashrate-unit" class="text-xs text-gray-400 mt-1">H/s</div>
-        </div>
-        <div class="card">
-          <div class="stat-label">Total SPM</div>
-          <div id="total-spm" class="stat-value">-</div>
-          <div class="text-xs text-gray-400 mt-1">Shares/Min</div>
-        </div>
-        <div class="card">
-          <div class="stat-label">Paid 24h</div>
-          <div id="paid24h" class="stat-value">-</div>
-          <div class="text-xs text-gray-400 mt-1">
-            <span class="currency-unit">-</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Workers -->
-      <div class="card mb-8">
-        <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
-          <h3 class="text-lg font-semibold">Workers</h3>
-          <span class="text-sm text-gray-400"
-            >Last: <span id="worker-update">-</span></span
-          >
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="text-left text-gray-400 border-b border-gray-700">
-                <th class="pb-2 pr-4">Name</th>
-                <th class="pb-2 pr-4">Algo</th>
-                <th class="pb-2 pr-4">SPM</th>
-                <th class="pb-2 pr-4">Status</th>
-                <th class="pb-2">Accepted</th>
-              </tr>
-            </thead>
-            <tbody id="worker-list">
-              <tr>
-                <td colspan="5" class="py-4 text-center text-gray-500">
-                  Loading...
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Charts -->
-      <div class="grid md:grid-cols-2 gap-4 mb-8">
-        <div class="card">
-          <h3 class="text-lg font-semibold mb-4">Hashrate History</h3>
-          <div id="chart-hr-info" class="text-xs text-gray-400 mb-2">
-            No data yet
-          </div>
-          <canvas id="hashrateChart" height="150"></canvas>
-        </div>
-        <div class="card">
-          <h3 class="text-lg font-semibold mb-4">Balance History</h3>
-          <div id="chart-bal-info" class="text-xs text-gray-400 mb-2">
-            No data yet
-          </div>
-          <canvas id="balanceChart" height="150"></canvas>
-        </div>
-      </div>
-
-      <!-- Payments + Mining Info -->
-      <div class="grid md:grid-cols-2 gap-4 mb-8">
-        <div class="card">
-          <h3 class="text-lg font-semibold mb-4">Recent Payments</h3>
-          <div id="payment-list" class="space-y-2">
-            <div class="text-center text-gray-500 py-4">Loading...</div>
-          </div>
-          <div class="mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
-            Total paid:
-            <span id="total-paid" class="text-gray-200 font-mono">-</span>
-          </div>
-        </div>
-
-        <div class="card">
-          <h3 class="text-lg font-semibold mb-4">Mining Info</h3>
-          <div class="space-y-2 text-sm">
-            <div class="flex justify-between py-2 border-b border-gray-800">
-              <span class="text-gray-400">Currency</span>
-              <span id="mining-currency" class="font-mono text-blue-400"
-                >-</span
-              >
+        <div class="flex justify-between items-center mb-8 flex-wrap gap-4">
+            <div>
+                <h1 class="text-3xl font-bold">zpool Monitor</h1>
+                <p class="text-sm text-gray-400 mt-1">
+                    Wallet: <span id="wallet-display" class="font-mono text-gray-300">Loading...</span>
+                    <span id="currency-badge" class="ml-2 px-2 py-0.5 bg-blue-500/20 text-blue-400 rounded text-xs">-</span>
+                </p>
             </div>
-            <div class="flex justify-between py-2 border-b border-gray-800">
-              <span class="text-gray-400">Max Hashrate</span>
-              <span id="max-hashrate" class="font-mono text-green-400">-</span>
+            <div id="status-indicator" class="flex items-center gap-2 bg-green-500/10 px-3 py-1 rounded-full">
+                <span class="w-2 h-2 bg-green-500 rounded-full pulse"></span>
+                <span class="text-sm text-green-400">Live</span>
             </div>
-            <div class="flex justify-between py-2 border-b border-gray-800">
-              <span class="text-gray-400">Unsold</span>
-              <span id="unsold" class="font-mono">-</span>
-            </div>
-            <div class="flex justify-between py-2 border-b border-gray-800">
-              <span class="text-gray-400">Total Paid</span>
-              <span id="total-paid-detail" class="font-mono">-</span>
-            </div>
-            <div class="flex justify-between py-2 border-b border-gray-800">
-              <span class="text-gray-400">Actual 24h</span>
-              <span id="estimate" class="font-mono text-green-400">-</span>
-            </div>
-            <div class="flex justify-between py-2">
-              <span class="text-gray-400">Last Update</span>
-              <span id="last-update" class="font-mono text-xs">-</span>
-            </div>
-          </div>
         </div>
-      </div>
 
-      <!-- Alert Status -->
-      <div class="card mb-8">
-        <h3 class="text-lg font-semibold mb-4">Alert Channels</h3>
-        <div
-          id="alert-status"
-          class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"
-        ></div>
-      </div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+            <div class="card glow">
+                <div class="stat-label">Balance</div>
+                <div id="balance" class="stat-value">-</div>
+                <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
+            </div>
+            <div class="card">
+                <div class="stat-label">Hashrate</div>
+                <div id="hashrate" class="stat-value">-</div>
+                <div id="hashrate-unit" class="text-xs text-gray-400 mt-1">H/s</div>
+            </div>
+            <div class="card">
+                <div class="stat-label">Total SPM</div>
+                <div id="total-spm" class="stat-value">-</div>
+                <div class="text-xs text-gray-400 mt-1">Shares/Min</div>
+            </div>
+            <div class="card">
+                <div class="stat-label">Paid 24h</div>
+                <div id="paid24h" class="stat-value">-</div>
+                <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
+            </div>
+        </div>
 
-      <!-- Footer -->
-      <div class="text-center text-xs text-gray-500 pb-4">
-        zpool Monitor v2.0.1 • Auto-refresh:
-        <span id="refresh-interval">60</span>s
-      </div>
+        <div class="card mb-8">
+            <div class="flex justify-between items-center mb-4 flex-wrap gap-2">
+                <h3 class="text-lg font-semibold">Workers</h3>
+                <span class="text-sm text-gray-400">Last: <span id="worker-update">-</span></span>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead>
+                        <tr class="text-left text-gray-400 border-b border-gray-700">
+                            <th class="pb-2 pr-4">Name</th>
+                            <th class="pb-2 pr-4">Algo</th>
+                            <th class="pb-2 pr-4">SPM</th>
+                            <th class="pb-2 pr-4">Status</th>
+                            <th class="pb-2">Accepted</th>
+                        </tr>
+                    </thead>
+                    <tbody id="worker-list">
+                        <tr><td colspan="5" class="py-4 text-center text-gray-500">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Hashrate History</h3>
+                <div id="chart-hr-info" class="text-xs text-gray-400 mb-2">No data yet</div>
+                <canvas id="hashrateChart" height="150"></canvas>
+            </div>
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Balance History</h3>
+                <div id="chart-bal-info" class="text-xs text-gray-400 mb-2">No data yet</div>
+                <canvas id="balanceChart" height="150"></canvas>
+            </div>
+        </div>
+
+        <div class="grid md:grid-cols-2 gap-4 mb-8">
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Recent Payments</h3>
+                <div id="payment-list" class="space-y-2">
+                    <div class="text-center text-gray-500 py-4">Loading...</div>
+                </div>
+                <div class="mt-4 pt-4 border-t border-gray-700 text-xs text-gray-400">
+                    Total paid: <span id="total-paid" class="text-gray-200 font-mono">-</span>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 class="text-lg font-semibold mb-4">Mining Info</h3>
+                <div class="space-y-2 text-sm">
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Currency</span>
+                        <span id="mining-currency" class="font-mono text-blue-400">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Max Hashrate</span>
+                        <span id="max-hashrate" class="font-mono text-green-400">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Unsold</span>
+                        <span id="unsold" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Total Paid</span>
+                        <span id="total-paid-detail" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Actual 24h</span>
+                        <span id="estimate" class="font-mono text-green-400">-</span>
+                    </div>
+                    <div class="flex justify-between py-2">
+                        <span class="text-gray-400">Last Update</span>
+                        <span id="last-update" class="font-mono text-xs">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card mb-8">
+            <h3 class="text-lg font-semibold mb-4">Alert Channels</h3>
+            <div id="alert-status" class="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm"></div>
+        </div>
+
+        <div class="text-center text-xs text-gray-500 pb-4">
+            zpool Monitor v2.0.1 • Auto-refresh: <span id="refresh-interval">60</span>s
+        </div>
     </div>
 
     <script>
-      console.log("🚀 zpool Monitor starting...");
+        function getBangkokTime(date) {
+            const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
+            return new Date(utc + (3600000 * 7));
+        }
 
-      function getBangkokTime(date) {
-        const utc = date.getTime() + date.getTimezoneOffset() * 60000;
-        return new Date(utc + 3600000 * 7);
-      }
+        function formatDateTime(ts) {
+            if (!ts) return '-';
+            const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            const bkk = getBangkokTime(date);
+            const d = String(bkk.getDate()).padStart(2, '0');
+            const m = String(bkk.getMonth() + 1).padStart(2, '0');
+            const y = bkk.getFullYear();
+            const h = String(bkk.getHours()).padStart(2, '0');
+            const min = String(bkk.getMinutes()).padStart(2, '0');
+            const s = String(bkk.getSeconds()).padStart(2, '0');
+            return `${d}/${m}/${y} ${h}:${min}:${s}`;
+        }
 
-      function formatDateTime(ts) {
-        if (!ts) return "-";
-        const date =
-          typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
-        const bkk = getBangkokTime(date);
-        const d = String(bkk.getDate()).padStart(2, "0");
-        const m = String(bkk.getMonth() + 1).padStart(2, "0");
-        const y = bkk.getFullYear();
-        const h = String(bkk.getHours()).padStart(2, "0");
-        const min = String(bkk.getMinutes()).padStart(2, "0");
-        const s = String(bkk.getSeconds()).padStart(2, "0");
-        return `${d}/${m}/${y} ${h}:${min}:${s}`;
-      }
+        function formatTimeShort(ts) {
+            if (!ts) return '-';
+            const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
+            const bkk = getBangkokTime(date);
+            const h = String(bkk.getHours()).padStart(2, '0');
+            const min = String(bkk.getMinutes()).padStart(2, '0');
+            return `${h}:${min}`;
+        }
 
-      function formatTimeShort(ts) {
-        if (!ts) return "-";
-        const date =
-          typeof ts === "number" ? new Date(ts * 1000) : new Date(ts);
-        const bkk = getBangkokTime(date);
-        const h = String(bkk.getHours()).padStart(2, "0");
-        const min = String(bkk.getMinutes()).padStart(2, "0");
-        return `${h}:${min}`;
-      }
+        function formatLargeNumber(num) {
+            if (!num || isNaN(num)) return '0';
+            if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
+            if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
+            if (num >= 1e6) return (num / 1e6).toFixed(2) + 'M';
+            if (num >= 1e3) return (num / 1e3).toFixed(2) + 'K';
+            return num.toFixed(0);
+        }
 
-      function formatLargeNumber(num) {
-        if (!num || isNaN(num)) return "0";
-        if (num >= 1e12) return (num / 1e12).toFixed(2) + "T";
-        if (num >= 1e9) return (num / 1e9).toFixed(2) + "B";
-        if (num >= 1e6) return (num / 1e6).toFixed(2) + "M";
-        if (num >= 1e3) return (num / 1e3).toFixed(2) + "K";
-        return num.toFixed(0);
-      }
+        function formatHashrate(h) {
+            if (!h || isNaN(h)) return ['0.00', 'H/s'];
+            if (h >= 1e12) return [(h/1e12).toFixed(2), 'TH/s'];
+            if (h >= 1e9) return [(h/1e9).toFixed(2), 'GH/s'];
+            if (h >= 1e6) return [(h/1e6).toFixed(2), 'MH/s'];
+            if (h >= 1e3) return [(h/1e3).toFixed(2), 'KH/s'];
+            return [h.toFixed(2), 'H/s'];
+        }
 
-      function formatHashrate(h) {
-        if (!h || isNaN(h)) return ["0.00", "H/s"];
-        if (h >= 1e12) return [(h / 1e12).toFixed(2), "TH/s"];
-        if (h >= 1e9) return [(h / 1e9).toFixed(2), "GH/s"];
-        if (h >= 1e6) return [(h / 1e6).toFixed(2), "MH/s"];
-        if (h >= 1e3) return [(h / 1e3).toFixed(2), "KH/s"];
-        return [h.toFixed(2), "H/s"];
-      }
-
-      const chartOpts = {
-        responsive: true,
-        animation: { duration: 0 },
-        plugins: { legend: { display: false } },
-        scales: {
-          y: {
-            beginAtZero: true,
-            ticks: { color: "#94a3b8" },
-            grid: { color: "#334155" },
-          },
-          x: {
-            ticks: { color: "#94a3b8", maxTicksLimit: 8 },
-            grid: { color: "#334155" },
-          },
-        },
-      };
-
-      const hashrateChart = new Chart(
-        document.getElementById("hashrateChart"),
-        {
-          type: "line",
-          data: {
-            labels: [],
-            datasets: [
-              {
-                data: [],
-                borderColor: "#10b981",
-                backgroundColor: "rgba(16,185,129,0.1)",
-                fill: true,
-                tension: 0.4,
-                pointRadius: 2,
-              },
-            ],
-          },
-          options: chartOpts,
-        },
-      );
-
-      const balanceChart = new Chart(document.getElementById("balanceChart"), {
-        type: "line",
-        data: {
-          labels: [],
-          datasets: [
-            {
-              data: [],
-              borderColor: "#f59e0b",
-              backgroundColor: "rgba(245,158,11,0.1)",
-              fill: true,
-              tension: 0.4,
-              pointRadius: 2,
-            },
-          ],
-        },
-        options: chartOpts,
-      });
-
-      async function updateWorkers() {
-        console.log("👷 updateWorkers called...");
-        try {
-          const res = await fetch("/api/workers?t=" + Date.now());
-          const data = await res.json();
-          console.log("📥 Workers data received:", data);
-
-          const list = document.getElementById("worker-list");
-          const workersStatus = document.getElementById("workers-status");
-          const workerUpdate = document.getElementById("worker-update");
-
-          console.log("Elements:", { list, workersStatus, workerUpdate });
-
-          if (!list || !workersStatus || !workerUpdate) {
-            console.error("❌ Elements not found!");
-            return;
-          }
-
-          if (!data || Object.keys(data).length === 0) {
-            console.log("️ No workers data");
-            list.innerHTML =
-              '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
-            workersStatus.textContent = "0 online";
-            return;
-          }
-
-          let html = "";
-          let online = 0;
-          let total = 0;
-
-          for (const [algo, workers] of Object.entries(data)) {
-            console.log(`Processing algo: ${algo}, workers:`, workers);
-            if (!Array.isArray(workers)) continue;
-
-            for (const w of workers) {
-              total++;
-              const isAlive = w.alive === true || w.spm > 0;
-              if (isAlive) online++;
-
-              const spm = w.spm || 0;
-              const accepted = w.accepted || 0;
-              const workerName = w.worker || "Unknown";
-              const statusClass = isAlive ? "status-online" : "status-offline";
-              const statusText = isAlive ? "Online" : "Offline";
-
-              console.log(
-                `Worker: ${workerName}, SPM: ${spm}, Alive: ${isAlive}`,
-              );
-
-              html += `<tr class="border-b border-gray-800">
-                        <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
-                        <td class="py-3 pr-4 text-gray-400">${algo}</td>
-                        <td class="py-3 pr-4 font-mono text-green-400">${spm.toFixed(1)}</td>
-                        <td class="py-3 pr-4"><span class="${statusClass}">${statusText}</span></td>
-                        <td class="py-3 text-xs text-gray-400 font-mono">${formatLargeNumber(accepted)}</td>
-                    </tr>`;
+        const chartOpts = {
+            responsive: true, animation: { duration: 0 },
+            plugins: { legend: { display: false } },
+            scales: {
+                y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: '#334155' } }
             }
-          }
+        };
 
-          console.log("Generated HTML:", html);
-          console.log(`Total: ${total}, Online: ${online}`);
+        const hashrateChart = new Chart(document.getElementById('hashrateChart'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
+            options: chartOpts
+        });
 
-          list.innerHTML =
-            html ||
-            '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers found</td></tr>';
-          workersStatus.textContent = `${online} online / ${total} total`;
-          workerUpdate.textContent = formatTimeShort(new Date());
+        const balanceChart = new Chart(document.getElementById('balanceChart'), {
+            type: 'line',
+            data: { labels: [], datasets: [{ data: [], borderColor: '#f59e0b', backgroundColor: 'rgba(245,158,11,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
+            options: chartOpts
+        });
 
-          console.log("✅ Workers updated successfully");
-        } catch (e) {
-          console.error("❌ Workers error:", e);
+        async function updateWorkers() {
+            try {
+                const res = await fetch('/api/workers?t=' + Date.now());
+                const data = await res.json();
+                
+                const list = document.getElementById('worker-list');
+                const workersStatus = document.getElementById('workers-status');
+                const workerUpdate = document.getElementById('worker-update');
+                
+                if (!list || !workersStatus || !workerUpdate) return;
+                
+                if (!data || Object.keys(data).length === 0) {
+                    list.innerHTML = '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers</td></tr>';
+                    workersStatus.textContent = '0 online';
+                    return;
+                }
+
+                let html = '';
+                let online = 0;
+                let total = 0;
+                
+                for (const [algo, workers] of Object.entries(data)) {
+                    if (!Array.isArray(workers)) continue;
+                    for (const w of workers) {
+                        total++;
+                        const isAlive = w.alive === true || w.spm > 0;
+                        if (isAlive) online++;
+                        const spm = w.spm || 0;
+                        const accepted = w.accepted || 0;
+                        const workerName = w.worker || 'Unknown';
+                        const statusClass = isAlive ? 'status-online' : 'status-offline';
+                        const statusText = isAlive ? 'Online' : 'Offline';
+                        
+                        html += `<tr class="border-b border-gray-800">
+                            <td class="py-3 pr-4 font-mono text-blue-400">${workerName}</td>
+                            <td class="py-3 pr-4 text-gray-400">${algo}</td>
+                            <td class="py-3 pr-4 font-mono text-green-400">${spm.toFixed(1)}</td>
+                            <td class="py-3 pr-4"><span class="${statusClass}">${statusText}</span></td>
+                            <td class="py-3 text-xs text-gray-400 font-mono">${formatLargeNumber(accepted)}</td>
+                        </tr>`;
+                    }
+                }
+                
+                list.innerHTML = html || '<tr><td colspan="5" class="py-4 text-center text-gray-500">No workers found</td></tr>';
+                workersStatus.textContent = `${online} online / ${total} total`;
+                workerUpdate.textContent = formatTimeShort(new Date());
+            } catch (e) { console.error('Workers error:', e); }
         }
-      }
 
-      async function updateStats() {
-        console.log("📊 updateStats called...");
-        try {
-          const res = await fetch("/api/stats?t=" + Date.now());
-          const d = await res.json();
-          console.log("📥 Stats data:", d);
+        async function updateStats() {
+            try {
+                const res = await fetch('/api/stats?t=' + Date.now());
+                const d = await res.json();
+                if (d.error) return;
 
-          if (d.error) {
-            console.error("API Error:", d.error);
-            return;
-          }
+                const currency = d.currency || 'BTC';
+                
+                const setVal = (id, val) => {
+                    const el = document.getElementById(id);
+                    if (el) el.textContent = val;
+                };
 
-          const currency = d.currency || "BTC";
-
-          const setVal = (id, val) => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = val;
-            else console.warn(`Element #${id} not found`);
-          };
-
-          setVal("balance", (d.balance || 0).toFixed(8));
-          setVal("paid24h", (d.paid24h || 0).toFixed(8));
-          setVal("unsold", `${(d.unsold || 0).toFixed(8)} ${currency}`);
-          setVal(
-            "total-paid-detail",
-            `${(d.total_paid || 0).toFixed(8)} ${currency}`,
-          );
-          setVal("estimate", `${(d.estimate || 0).toFixed(8)} ${currency}/day`);
-          setVal("workers", d.worker || 0);
-          setVal("mining-currency", currency);
-          setVal("currency-badge", currency);
-          setVal(
-            "wallet-display",
-            d.address ? d.address.substring(0, 10) + "..." : "Loading...",
-          );
-
-          document
-            .querySelectorAll(".currency-unit")
-            .forEach((el) => (el.textContent = currency));
-
-          const [hr, unit] = formatHashrate(d.hashrate);
-          setVal("hashrate", hr);
-          setVal("hashrate-unit", unit);
-
-          const [maxHr, maxUnit] = formatHashrate(d.max_hashrate);
-          setVal("max-hashrate", `${maxHr} ${maxUnit}`);
-          setVal("total-spm", (d.spm || 0).toFixed(1));
-          setVal("last-update", formatDateTime(d.last_update));
-
-          console.log("✅ Stats updated");
-        } catch (e) {
-          console.error("❌ Stats error:", e);
+                setVal('balance', (d.balance || 0).toFixed(8));
+                setVal('paid24h', (d.paid24h || 0).toFixed(8));
+                setVal('unsold', `${(d.unsold || 0).toFixed(8)} ${currency}`);
+                setVal('total-paid-detail', `${(d.total_paid || 0).toFixed(8)} ${currency}`);
+                setVal('estimate', `${(d.estimate || 0).toFixed(8)} ${currency}/day`);
+                setVal('workers', d.worker || 0);
+                setVal('mining-currency', currency);
+                setVal('currency-badge', currency);
+                setVal('wallet-display', d.address ? d.address.substring(0, 10) + '...' : 'Loading...');
+                
+                document.querySelectorAll('.currency-unit').forEach(el => el.textContent = currency);
+                const [hr, unit] = formatHashrate(d.hashrate);
+                setVal('hashrate', hr);
+                setVal('hashrate-unit', unit);
+                const [maxHr, maxUnit] = formatHashrate(d.max_hashrate);
+                setVal('max-hashrate', `${maxHr} ${maxUnit}`);
+                setVal('total-spm', (d.spm || 0).toFixed(1));
+                setVal('last-update', formatDateTime(d.last_update));
+            } catch (e) { console.error('Stats error:', e); }
         }
-      }
 
-      async function updatePayments() {
-        try {
-          const res = await fetch("/api/payments?t=" + Date.now());
-          const payments = await res.json();
-          console.log("💸 Payments:", payments);
+        async function updatePayments() {
+            try {
+                const res = await fetch('/api/payments?t=' + Date.now());
+                const payments = await res.json();
+                const list = document.getElementById('payment-list');
+                const totalPaid = document.getElementById('total-paid');
+                if (!list || !totalPaid) return;
+                
+                if (!payments || payments.length === 0) {
+                    list.innerHTML = '<div class="text-center text-gray-500 py-4">No payments yet</div>';
+                    return;
+                }
 
-          const list = document.getElementById("payment-list");
-          const totalPaid = document.getElementById("total-paid");
-          if (!list || !totalPaid) return;
-
-          if (!payments || payments.length === 0) {
-            list.innerHTML =
-              '<div class="text-center text-gray-500 py-4">No payments yet</div>';
-            return;
-          }
-
-          let html = "",
-            total = 0;
-          const currency = payments[0]?.coin || payments[0]?.currency || "BTC";
-          for (const p of payments) {
-            total += p.amount || 0;
-            const txid = p.txid ? p.txid.substring(0, 8) + "..." : "N/A";
-            html += `<div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
-                    <div><div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${currency}</div>
-                    <div class="text-xs text-gray-400">${formatDateTime(p.time)}</div></div>
-                    <a href="#" class="tx-link text-xs font-mono">${txid}</a>
-                </div>`;
-          }
-          list.innerHTML = html;
-          totalPaid.textContent = `${total.toFixed(8)} ${currency}`;
-        } catch (e) {
-          console.error("Payments error:", e);
+                let html = '', total = 0;
+                const currency = payments[0]?.coin || payments[0]?.currency || 'BTC';
+                for (const p of payments) {
+                    total += p.amount || 0;
+                    const txid = p.txid ? p.txid.substring(0, 8) + '...' : 'N/A';
+                    html += `<div class="flex justify-between items-center p-2 bg-gray-800/50 rounded">
+                        <div><div class="font-mono text-sm text-green-400">+ ${p.amount.toFixed(8)} ${currency}</div>
+                        <div class="text-xs text-gray-400">${formatDateTime(p.time)}</div></div>
+                        <a href="#" class="tx-link text-xs font-mono">${txid}</a>
+                    </div>`;
+                }
+                list.innerHTML = html;
+                totalPaid.textContent = `${total.toFixed(8)} ${currency}`;
+            } catch (e) { console.error('Payments error:', e); }
         }
-      }
 
-      async function updateCharts() {
-        try {
-          const res = await fetch("/api/history?t=" + Date.now());
-          const history = await res.json();
-          console.log("📈 History:", history);
-
-          const chartHrInfo = document.getElementById("chart-hr-info");
-          const chartBalInfo = document.getElementById("chart-bal-info");
-          if (chartHrInfo)
-            chartHrInfo.textContent = `${history.length} data points`;
-          if (chartBalInfo)
-            chartBalInfo.textContent = `${history.length} data points`;
-          if (history.length === 0) return;
-
-          const labels = history.map((h) => formatTimeShort(h.time));
-          hashrateChart.data.labels = labels;
-          hashrateChart.data.datasets[0].data = history.map(
-            (h) => h.hashrate || 0,
-          );
-          hashrateChart.update("none");
-          balanceChart.data.labels = labels;
-          balanceChart.data.datasets[0].data = history.map(
-            (h) => h.balance || 0,
-          );
-          balanceChart.update("none");
-        } catch (e) {
-          console.error("Charts error:", e);
+        async function updateCharts() {
+            try {
+                const res = await fetch('/api/history?t=' + Date.now());
+                const history = await res.json();
+                const chartHrInfo = document.getElementById('chart-hr-info');
+                const chartBalInfo = document.getElementById('chart-bal-info');
+                if (chartHrInfo) chartHrInfo.textContent = `${history.length} data points`;
+                if (chartBalInfo) chartBalInfo.textContent = `${history.length} data points`;
+                if (history.length === 0) return;
+                
+                const labels = history.map(h => formatTimeShort(h.time));
+                hashrateChart.data.labels = labels;
+                hashrateChart.data.datasets[0].data = history.map(h => h.hashrate || 0);
+                hashrateChart.update('none');
+                balanceChart.data.labels = labels;
+                balanceChart.data.datasets[0].data = history.map(h => h.balance || 0);
+                balanceChart.update('none');
+            } catch (e) { console.error('Charts error:', e); }
         }
-      }
 
-      async function updateAlertStatus() {
-        try {
-          const res = await fetch("/api/config?t=" + Date.now());
-          const cfg = await res.json();
-          const el = document.getElementById("alert-status");
-          const refreshInterval = document.getElementById("refresh-interval");
-          if (!el || !refreshInterval) return;
-
-          refreshInterval.textContent = cfg.refresh_interval;
-          let html = "";
-          html += `<div class="p-2 ${cfg.notifications.discord.enabled ? "bg-green-500/10" : "bg-gray-500/10"} rounded">
-                <div>Discord</div><div class="text-xs ${cfg.notifications.discord.enabled ? "text-green-400" : "text-gray-500"}">${cfg.notifications.discord.enabled ? "Enabled" : "Disabled"}</div></div>`;
-          html += `<div class="p-2 ${cfg.notifications.ntfy.enabled ? "bg-green-500/10" : "bg-gray-500/10"} rounded">
-                <div>ntfy</div><div class="text-xs ${cfg.notifications.ntfy.enabled ? "text-green-400" : "text-gray-500"}">${cfg.notifications.ntfy.enabled ? "Enabled" : "Disabled"}</div></div>`;
-          html += `<div class="p-2 bg-blue-500/10 rounded"><div>Worker Offline</div><div class="text-xs text-blue-400">${cfg.alerts.worker_offline ? "Active" : "Off"}</div></div>`;
-          html += `<div class="p-2 bg-blue-500/10 rounded"><div>Balance Goal</div><div class="text-xs text-blue-400">>= ${cfg.alerts.min_balance}</div></div>`;
-          el.innerHTML = html;
-        } catch (e) {
-          console.error("Config error:", e);
+        async function updateAlertStatus() {
+            try {
+                const res = await fetch('/api/config?t=' + Date.now());
+                const cfg = await res.json();
+                const el = document.getElementById('alert-status');
+                const refreshInterval = document.getElementById('refresh-interval');
+                if (!el || !refreshInterval) return;
+                
+                refreshInterval.textContent = cfg.refresh_interval;
+                let html = '';
+                html += `<div class="p-2 ${cfg.notifications.discord.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
+                    <div>Discord</div><div class="text-xs ${cfg.notifications.discord.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.discord.enabled ? 'Enabled' : 'Disabled'}</div></div>`;
+                html += `<div class="p-2 ${cfg.notifications.ntfy.enabled ? 'bg-green-500/10' : 'bg-gray-500/10'} rounded">
+                    <div>ntfy</div><div class="text-xs ${cfg.notifications.ntfy.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.ntfy.enabled ? 'Enabled' : 'Disabled'}</div></div>`;
+                html += `<div class="p-2 bg-blue-500/10 rounded"><div>Worker Offline</div><div class="text-xs text-blue-400">${cfg.alerts.worker_offline ? 'Active' : 'Off'}</div></div>`;
+                html += `<div class="p-2 bg-blue-500/10 rounded"><div>Balance Goal</div><div class="text-xs text-blue-400">>= ${cfg.alerts.min_balance}</div></div>`;
+                el.innerHTML = html;
+            } catch (e) { console.error('Config error:', e); }
         }
-      }
 
-      console.log("🔄 Initial load...");
-      updateStats();
-      updateWorkers();
-      updatePayments();
-      updateCharts();
-      updateAlertStatus();
+        // ✅ รอ DOM โหลดเสร็จก่อน
+        document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Loaded - Starting...');
+            updateStats();
+            updateWorkers();
+            updatePayments();
+            updateCharts();
+            updateAlertStatus();
 
-      setInterval(updateStats, 10000);
-      setInterval(updateWorkers, 30000);
-      setInterval(updatePayments, 300000);
-      setInterval(updateCharts, 10000);
+            setInterval(updateStats, 10000);
+            setInterval(updateWorkers, 30000);
+            setInterval(updatePayments, 300000);
+            setInterval(updateCharts, 10000);
+        });
     </script>
-  </body>
+</body>
 </html>
