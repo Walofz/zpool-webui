@@ -2,8 +2,6 @@ import asyncio
 import logging
 import os
 from datetime import datetime
-import sys
-import io
 
 import httpx
 from fastapi import FastAPI, Request
@@ -11,24 +9,12 @@ from fastapi.responses import HTMLResponse
 from fastapi.templating import Jinja2Templates
 import uvicorn
 
-if sys.stdout.encoding != 'utf-8':
-    sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-if sys.stderr.encoding != 'utf-8':
-    sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
-os.environ['PYTHONIOENCODING'] = 'utf-8'
-
 # Setup logging
 logging.basicConfig(
     level=logging.INFO,
-    format='%(asctime)s - %(levelname)s - %(message)s',
-    force=True
+    format='%(asctime)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
-
-if not any(isinstance(handler, logging.StreamHandler) for handler in logger.handlers):
-    handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-    logger.addHandler(handler)
 
 # Helper: get env with type casting
 def get_env(key: str, default=None, cast_type=str):
@@ -42,12 +28,6 @@ def get_env(key: str, default=None, cast_type=str):
     elif cast_type == float:
         return float(value)
     return value
-
-
-def make_ascii_safe(value: str) -> str:
-    if value is None:
-        return ""
-    return str(value).encode("ascii", "ignore").decode("ascii")
 
 # Configuration
 config = {
@@ -67,23 +47,23 @@ config = {
             "enabled": get_env("NTFY_ENABLED", False, bool),
             "topic": get_env("NTFY_TOPIC", ""),
             "server": get_env("NTFY_SERVER", "https://ntfy.sh"),
-            "user": get_env("NTFY_USER", ""),       # <-- เพิ่ม
-            "pass": get_env("NTFY_PASS", ""),       # <-- เพิ่ม
+            "user": get_env("NTFY_USER", ""),
+            "pass": get_env("NTFY_PASS", ""),
         }
     }
 }
 
 if not config["wallet"]:
-    logger.error("❌ ZPOOL_WALLET is not set!")
+    logger.error("ZPOOL_WALLET is not set!")
     raise ValueError("ZPOOL_WALLET environment variable is required")
 
-logger.info(f"✅ Configuration loaded:")
+logger.info("Configuration loaded:")
 logger.info(f"   Wallet: {config['wallet'][:10]}...")
 logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.1.1")
+app = FastAPI(title="zpool Monitor", version="1.2.1")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -114,15 +94,13 @@ async def fetch_zpool_stats() -> dict:
         
         content_type = r.headers.get("content-type", "")
         if "application/json" not in content_type:
-            logger.error(f"❌ API did not return JSON! Content-Type: {content_type}")
-            logger.error(f"Response text: {r.text[:500]}")
+            logger.error(f"API did not return JSON! Content-Type: {content_type}")
             raise ValueError(f"Expected JSON, got {content_type}")
             
         r.raise_for_status()
         data = r.json()
         
         miners = data.get("miners", [])
-        worker_count = len(miners)
         
         return {
             "currency": "BTC",
@@ -133,7 +111,7 @@ async def fetch_zpool_stats() -> dict:
             "paid24h": float(data.get("paid24h", 0)),
             "total_paid": float(data.get("total", 0)),
             "hashrate": 0,
-            "worker": worker_count,
+            "worker": len(miners),
             "estimate": 0,
             "miners": miners,
             "payouts": data.get("payouts", [])
@@ -160,8 +138,8 @@ async def send_discord(title: str, message: str, color: int = 15158332):
         return
     payload = {
         "embeds": [{
-            "title": title,
-            "description": message,
+            "title": title.strip(),
+            "description": message.strip(),
             "color": color,
             "timestamp": datetime.utcnow().isoformat(),
             "footer": {"text": "zpool Monitor"}
@@ -170,9 +148,9 @@ async def send_discord(title: str, message: str, color: int = 15158332):
     try:
         async with httpx.AsyncClient() as client:
             await client.post(webhook_url, json=payload, timeout=10)
-        logger.info(f"✅ Discord sent: {title}")
+        logger.info(f"Discord sent: {title}")
     except Exception as e:
-        logger.error(f"❌ Discord error: {e}")
+        logger.error(f"Discord error: {e}")
 
 
 async def send_ntfy(title: str, message: str, priority: int = 3):
@@ -186,61 +164,38 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
     if not topic:
         return
 
-    # ✅ บังคับใช้ UTF-8 สำหรับ body และทำ header เป็น ASCII-safe เพื่อไม่ให้ httpx/ntfy error จาก emoji
-    safe_title = make_ascii_safe(title)
+    # ✅ แก้ปัญหา Illegal header value:
+    # 1. .strip() ลบช่องว่างหัวท้ายที่อาจหลุดมา
+    # 2. .encode('ascii', 'ignore').decode('ascii') บังคับให้ Header เป็น ASCII ล้วนๆ 100%
+    safe_title = str(title).strip().encode('ascii', 'ignore').decode('ascii')
+
     headers = {
         "Title": safe_title,
         "Priority": str(priority),
         "Tags": "warning" if priority >= 4 else "info"
     }
 
-    # ✅ เตรียม auth
     auth_tuple = (user, password) if user and password else None
 
     try:
         async with httpx.AsyncClient() as client:
+            # Body ยังคงเป็น UTF-8 ได้ปกติ ไม่มีปัญหา
             await client.post(
                 f"{server}/{topic}",
-                content=message.encode('utf-8', errors='replace'),
+                content=str(message).encode('utf-8'),
                 headers=headers,
                 auth=auth_tuple,
                 timeout=10
             )
-        logger.info(f"✅ ntfy sent: {title}")
-    except UnicodeEncodeError as e:
-        # ✅ ถ้ายังมีปัญหา ให้ลบ emoji ออก
-        logger.warning(f"⚠️ Unicode error, removing emojis: {e}")
-        # ลบ emoji ทั้งหมด
-        import re
-        emoji_pattern = re.compile("["
-            u"\U0001F600-\U0001F64F"  # emoticons
-            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
-            u"\U0001F680-\U0001F6FF"  # transport & map symbols
-            u"\U0001F1E0-\U0001F1FF"  # flags
-            "]+", flags=re.UNICODE)
-        
-        clean_message = emoji_pattern.sub(r'', message)
-        clean_title = emoji_pattern.sub(r'', title)
-        
-        headers["Title"] = make_ascii_safe(clean_title)
-        
-        async with httpx.AsyncClient() as client:
-            await client.post(
-                f"{server}/{topic}",
-                content=clean_message.encode('utf-8', errors='replace'),
-                headers=headers,
-                auth=auth_tuple,
-                timeout=10
-            )
-        logger.info(f"✅ ntfy sent (without emojis): {title}")
+        logger.info(f"ntfy sent: {safe_title}")
     except Exception as e:
-        logger.error(f"❌ ntfy error: {e}")
+        logger.error(f"ntfy error: {e}")
 
 
 async def send_alert(title: str, message: str, alert_type: str = "warning"):
     now = datetime.utcnow().timestamp()
     last = state["last_alert_sent"].get(alert_type, 0)
-    if now - last < 300:
+    if now - last < 300:  # anti-spam 5 mins
         return
     state["last_alert_sent"][alert_type] = now
     
@@ -255,18 +210,19 @@ async def check_alerts(stats: dict):
     alerts_cfg = config["alerts"]
     currency = stats.get("currency", "BTC")
     
+    # ✅ ข้อความภาษาอังกฤษล้วน ไม่มีช่องว่างนำหน้า
     if alerts_cfg["worker_offline"] and stats.get("worker", 0) == 0:
         await send_alert(
-            "⚠️ No Workers Online",
-            f"ไม่มี worker ทำงานอยู่!\nWallet: {config['wallet'][:10]}...",
+            "WARNING: No Workers Online",
+            f"No workers are currently running.\nWallet: {config['wallet'][:10]}...",
             "warning"
         )
     
     balance = stats.get("balance", 0)
     if balance >= alerts_cfg["min_balance"]:
         await send_alert(
-            "🎉 Balance Goal Reached",
-            f"Balance: {balance:.8f} {currency}\nเป้าหมาย: {alerts_cfg['min_balance']} {currency}",
+            "INFO: Balance Goal Reached",
+            f"Balance: {balance:.8f} {currency}\nTarget: {alerts_cfg['min_balance']} {currency}",
             "info"
         )
 
@@ -284,7 +240,7 @@ async def background_poller():
             try:
                 state["blocks"] = await fetch_blocks_found()
             except Exception as e:
-                logger.error(f"Blocks error: {e}")
+                logger.error(f"Blocks fetch error: {str(e)}")
             
             state["history"].append({
                 "time": datetime.utcnow().isoformat(),
@@ -295,17 +251,17 @@ async def background_poller():
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"✅ Updated: balance={stats.get('balance')}, workers={stats.get('worker')}")
+            logger.info(f"Updated: balance={stats.get('balance')}, workers={stats.get('worker')}")
             
         except Exception as e:
-            logger.error(f"❌ Polling error: {e}")
+            logger.error(f"Polling error: {str(e)}")
         
         await asyncio.sleep(config["refresh_interval"])
 
 
 @app.on_event("startup")
 async def startup():
-    logger.info("🚀 Starting zpool Monitor...")
+    logger.info("Starting zpool Monitor...")
     asyncio.create_task(background_poller())
 
 
@@ -360,7 +316,7 @@ async def api_config():
             "discord": {"enabled": config["notifications"]["discord"]["enabled"]},
             "ntfy": {
                 "enabled": config["notifications"]["ntfy"]["enabled"],
-                "has_auth": bool(config["notifications"]["ntfy"]["user"]) # ไม่โชว์ pass
+                "has_auth": bool(config["notifications"]["ntfy"]["user"])
             }
         }
     }
