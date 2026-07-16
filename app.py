@@ -63,7 +63,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.2.2")
+app = FastAPI(title="zpool Monitor", version="1.3.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -99,10 +99,35 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
+        # DEBUG: log โครงสร้างข้อมูลจาก API (ดูแค่ keys)
+        logger.info(f"API Response keys: {list(data.keys())}")
+        
         miners = data.get("miners", [])
         
+        # อ่าน currency จาก API (รองรับหลาย field name)
+        currency = (
+            data.get("currency") or 
+            data.get("coin") or 
+            data.get("payout_currency") or 
+            "BTC"  # default
+        ).upper()
+        
+        # อ่าน payouts (รองรับหลาย field name)
+        payouts = (
+            data.get("payouts") or 
+            data.get("payments") or 
+            data.get("payout_history") or 
+            []
+        )
+        
+        # DEBUG: log โครงสร้าง payouts
+        if payouts:
+            logger.info(f"Payouts count: {len(payouts)}")
+            if len(payouts) > 0:
+                logger.info(f"First payout keys: {list(payouts[0].keys()) if isinstance(payouts[0], dict) else 'Not a dict'}")
+        
         return {
-            "currency": "BTC",
+            "currency": currency,
             "address": config["wallet"],
             "unsold": float(data.get("unsold", 0)),
             "balance": float(data.get("balance", 0)),
@@ -113,7 +138,8 @@ async def fetch_zpool_stats() -> dict:
             "worker": len(miners),
             "estimate": 0,
             "miners": miners,
-            "payouts": data.get("payouts", [])
+            "payouts": payouts,
+            "raw_api_keys": list(data.keys())  # สำหรับ debug
         }
 
 
@@ -151,7 +177,6 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
     if not topic:
         return
 
-    # บังคับให้ Header เป็น ASCII ล้วนๆ ไม่มีช่องว่างนำหน้า
     safe_title = str(title).strip().encode('ascii', 'ignore').decode('ascii')
 
     headers = {
@@ -229,7 +254,7 @@ async def background_poller():
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: balance={stats.get('balance')}, workers={stats.get('worker')}")
+            logger.info(f"Updated: currency={stats.get('currency')}, balance={stats.get('balance')}, workers={stats.get('worker')}, payouts={len(stats.get('payouts', []))}")
             
         except Exception as e:
             logger.error(f"Polling error: {str(e)}")
