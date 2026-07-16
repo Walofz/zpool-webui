@@ -60,8 +60,10 @@ if not config["wallet"]:
 logger.info("Configuration loaded:")
 logger.info(f"   Wallet: {config['wallet'][:10]}...")
 logger.info(f"   Refresh: {config['refresh_interval']}s")
+logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
+logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.5.0")
+app = FastAPI(title="zpool Monitor", version="1.6.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -70,6 +72,7 @@ state = {
     "workers": {},
     "payments": [],
     "max_hashrate": 0,
+    "max_spm": 0,
     "last_alert_sent": {},
     "history": [],
     "start_time": datetime.utcnow()
@@ -99,27 +102,38 @@ async def fetch_zpool_stats() -> dict:
         
         miners = data.get("miners", [])
         
-        # ✅ ดึง Total Hashrate จาก root ของ API (zpool มักจะส่งค่ารวมมาที่นี่)
-        total_hashrate = float(data.get("hashrate", 0))
-        
-        # ✅ Map ข้อมูล miners ให้ตรงกับที่ Frontend ต้องการ
+        # ✅ คำนวณ Total SPM จากทุก workers
+        total_spm = 0.0
         workers_dict = {}
+        
         if isinstance(miners, list):
             for m in miners:
                 algo = m.get("algo", "unknown").upper()
                 if algo not in workers_dict:
                     workers_dict[algo] = []
                 
-                # ใช้ SPM (Shares Per Minute) เป็นตัวบอกสถานะและประสิทธิภาพ
                 spm = float(m.get("spm", 0))
+                total_spm += spm
                 
                 workers_dict[algo].append({
-                    "worker": m.get("ID", "Unknown"),  # ✅ ใช้ ID เป็นชื่อ
+                    "worker": m.get("ID", "Unknown"),
                     "spm": spm,
                     "accepted": float(m.get("accepted", 0)),
-                    "alive": spm > 0  # ✅ ถ้า SPM > 0 ถือว่า Online
+                    "alive": spm > 0
                 })
-
+        
+        # ✅ ประมาณการ Hashrate จาก SPM (สำหรับ SHA-256)
+        # สูตร: Hashrate ≈ SPM × 2^32 / 60
+        estimated_hashrate = total_spm * (2**32) / 60 if total_spm > 0 else 0
+        
+        # ✅ ดึง Estimate จาก API
+        estimate_24h = (
+            float(data.get("estimate", 0)) or
+            float(data.get("estimate_24h", 0)) or
+            float(data.get("est_24h", 0)) or
+            0
+        )
+        
         # Read currency from API
         currency = (
             data.get("currency") or 
@@ -135,7 +149,6 @@ async def fetch_zpool_stats() -> dict:
             []
         )
         
-        # Count workers
         worker_count = sum(len(v) for v in workers_dict.values())
         
         return {
@@ -146,9 +159,10 @@ async def fetch_zpool_stats() -> dict:
             "unpaid": float(data.get("unpaid", 0)),
             "paid24h": float(data.get("paid24h", 0)),
             "total_paid": float(data.get("total", 0)),
-            "hashrate": total_hashrate,
+            "hashrate": estimated_hashrate,
+            "spm": total_spm,
             "worker": worker_count,
-            "estimate": float(data.get("estimate", 0)),
+            "estimate": estimate_24h,
             "workers_raw": workers_dict,
             "payouts": payouts
         }
@@ -253,23 +267,27 @@ async def background_poller():
             stats = await fetch_zpool_stats()
             state["stats"] = stats
             
-            # ✅ ใช้ workers_raw ที่ map มาแล้ว
             state["workers"] = stats.get("workers_raw", {})
             state["payments"] = stats.get("payouts", [])
             
+            # อัปเดต Max SPM และ Hashrate
+            if stats["spm"] > state["max_spm"]:
+                state["max_spm"] = stats["spm"]
             if stats["hashrate"] > state["max_hashrate"]:
                 state["max_hashrate"] = stats["hashrate"]
             
+            # ✅ เก็บ History ด้วย SPM แทน Hashrate
             state["history"].append({
                 "time": datetime.utcnow().isoformat(),
                 "hashrate": stats["hashrate"],
+                "spm": stats["spm"],
                 "balance": stats["balance"],
                 "workers": stats["worker"]
             })
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: HR={stats['hashrate']:.2f}, Bal={stats['balance']:.8f} {stats['currency']}, Workers={stats['worker']}")
+            logger.info(f"Updated: SPM={stats['spm']:.1f}, HR={stats['hashrate']:.2f}, Bal={stats['balance']:.8f} {stats['currency']}, Workers={stats['worker']}")
             
         except Exception as e:
             logger.error(f"Polling error: {str(e)}")
@@ -300,6 +318,7 @@ async def api_stats():
     return {
         **state["stats"],
         "max_hashrate": state["max_hashrate"],
+        "max_spm": state["max_spm"],
         "last_update": datetime.utcnow().isoformat()
     }
 

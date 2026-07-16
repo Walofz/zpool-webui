@@ -47,9 +47,9 @@
                 <div class="text-xs text-gray-400 mt-1"><span class="currency-unit">-</span></div>
             </div>
             <div class="card">
-                <div class="stat-label">Hashrate</div>
-                <div id="hashrate" class="stat-value">-</div>
-                <div id="hashrate-unit" class="text-xs text-gray-400 mt-1">H/s</div>
+                <div class="stat-label">Total SPM</div>
+                <div id="total-spm" class="stat-value">-</div>
+                <div class="text-xs text-gray-400 mt-1">Shares/Min</div>
             </div>
             <div class="card">
                 <div class="stat-label">Workers</div>
@@ -90,9 +90,9 @@
         <!-- Charts -->
         <div class="grid md:grid-cols-2 gap-4 mb-8">
             <div class="card">
-                <h3 class="text-lg font-semibold mb-4">Hashrate History</h3>
-                <div id="chart-hr-info" class="text-xs text-gray-400 mb-2">No data yet</div>
-                <canvas id="hashrateChart" height="150"></canvas>
+                <h3 class="text-lg font-semibold mb-4">SPM History</h3>
+                <div id="chart-spm-info" class="text-xs text-gray-400 mb-2">No data yet</div>
+                <canvas id="spmChart" height="150"></canvas>
             </div>
             <div class="card">
                 <h3 class="text-lg font-semibold mb-4">Balance History</h3>
@@ -121,6 +121,14 @@
                         <span id="mining-currency" class="font-mono text-blue-400">-</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Est. Hashrate</span>
+                        <span id="est-hashrate" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
+                        <span class="text-gray-400">Max SPM</span>
+                        <span id="max-spm" class="font-mono">-</span>
+                    </div>
+                    <div class="flex justify-between py-2 border-b border-gray-800">
                         <span class="text-gray-400">Unsold</span>
                         <span id="unsold" class="font-mono">-</span>
                     </div>
@@ -131,10 +139,6 @@
                     <div class="flex justify-between py-2 border-b border-gray-800">
                         <span class="text-gray-400">Estimate (24h)</span>
                         <span id="estimate" class="font-mono text-green-400">-</span>
-                    </div>
-                    <div class="flex justify-between py-2 border-b border-gray-800">
-                        <span class="text-gray-400">Max Hashrate</span>
-                        <span id="max-hashrate" class="font-mono">-</span>
                     </div>
                     <div class="flex justify-between py-2">
                         <span class="text-gray-400">Last Update</span>
@@ -152,40 +156,29 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.5.1 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.6.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
     <script>
-        // ✅ Helper: จัดรูปแบบเวลา 24h UTC+7 (ไทย)
         function formatDateTime(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return date.toLocaleString('th-TH', {
                 timeZone: 'Asia/Bangkok',
-                year: 'numeric',
-                month: '2-digit',
-                day: '2-digit',
-                hour: '2-digit',
-                minute: '2-digit',
-                second: '2-digit',
-                hour12: false
+                year: 'numeric', month: '2-digit', day: '2-digit',
+                hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false
             });
         }
 
-        // ✅ Helper: จัดรูปแบบเวลาสั้น (HH:MM) สำหรับกราฟ
         function formatTimeShort(ts) {
             if (!ts) return '-';
             const date = typeof ts === 'number' ? new Date(ts * 1000) : new Date(ts);
             return date.toLocaleString('th-TH', {
-                timeZone: 'Asia/Bangkok',
-                hour: '2-digit',
-                minute: '2-digit',
-                hour12: false
+                timeZone: 'Asia/Bangkok', hour: '2-digit', minute: '2-digit', hour12: false
             });
         }
 
-        // ✅ Helper: Format ตัวเลขใหญ่ (Accepted Shares)
         function formatLargeNumber(num) {
             if (num >= 1e12) return (num / 1e12).toFixed(2) + 'T';
             if (num >= 1e9) return (num / 1e9).toFixed(2) + 'B';
@@ -194,25 +187,16 @@
             return num.toFixed(0);
         }
 
-        // Chart setup
         const chartOpts = {
-            responsive: true,
-            animation: { duration: 0 },
+            responsive: true, animation: { duration: 0 },
             plugins: { legend: { display: false } },
             scales: {
-                y: { 
-                    beginAtZero: true,
-                    ticks: { color: '#94a3b8' }, 
-                    grid: { color: '#334155' } 
-                },
-                x: { 
-                    ticks: { color: '#94a3b8', maxTicksLimit: 8 }, 
-                    grid: { color: '#334155' } 
-                }
+                y: { beginAtZero: true, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                x: { ticks: { color: '#94a3b8', maxTicksLimit: 8 }, grid: { color: '#334155' } }
             }
         };
 
-        const hashrateChart = new Chart(document.getElementById('hashrateChart'), {
+        const spmChart = new Chart(document.getElementById('spmChart'), {
             type: 'line',
             data: { labels: [], datasets: [{ data: [], borderColor: '#10b981', backgroundColor: 'rgba(16,185,129,0.1)', fill: true, tension: 0.4, pointRadius: 2 }] },
             options: chartOpts
@@ -232,7 +216,6 @@
             return [h.toFixed(2), 'H/s'];
         }
 
-        // ✅ Workers - แสดง SPM และ Format Accepted
         async function updateWorkers() {
             try {
                 const res = await fetch('/api/workers?t=' + Date.now());
@@ -298,11 +281,19 @@
                 
                 document.querySelectorAll('.currency-unit').forEach(el => el.textContent = currency);
 
-                const [hr, unit] = formatHashrate(d.hashrate);
-                document.getElementById('hashrate').textContent = hr;
-                document.getElementById('hashrate-unit').textContent = unit;
+                // ✅ แสดง Total SPM
+                const totalSPM = d.spm || 0;
+                document.getElementById('total-spm').textContent = totalSPM.toFixed(1);
+                
+                // ✅ แสดง Estimated Hashrate (คำนวณจาก SPM)
+                const [estHr, estUnit] = formatHashrate(d.hashrate || 0);
+                document.getElementById('est-hashrate').textContent = `${estHr} ${estUnit}`;
+                
+                // ✅ แสดง Max SPM
+                const maxSPM = d.max_spm || 0;
+                document.getElementById('max-spm').textContent = maxSPM.toFixed(1);
 
-                const [maxHr, maxUnit] = formatHashrate(d.max_hashrate);
+                const [maxHr, maxUnit] = formatHashrate(d.max_hashrate || 0);
                 document.getElementById('max-hashrate').textContent = `${maxHr} ${maxUnit}`;
 
                 document.getElementById('last-update').textContent = formatDateTime(d.last_update);
@@ -342,27 +333,24 @@
             } catch (e) { console.error('Payments error:', e); }
         }
 
-        // ✅ แก้ไข Charts - แสดงข้อมูลและ debug
         async function updateCharts() {
             try {
                 const res = await fetch('/api/history?t=' + Date.now());
                 const history = await res.json();
                 
-                // Debug: แสดงจำนวนข้อมูล
-                document.getElementById('chart-hr-info').textContent = `${history.length} data points`;
+                document.getElementById('chart-spm-info').textContent = `${history.length} data points`;
                 document.getElementById('chart-bal-info').textContent = `${history.length} data points`;
                 
                 if (history.length === 0) {
-                    // ถ้ายังไม่มีข้อมูล รอไปก่อน
                     return;
                 }
                 
                 const labels = history.map(h => formatTimeShort(h.time));
                 
-                // Hashrate Chart
-                hashrateChart.data.labels = labels;
-                hashrateChart.data.datasets[0].data = history.map(h => h.hashrate || 0);
-                hashrateChart.update('none'); // ใช้ 'none' เพื่อไม่ animate
+                // ✅ SPM Chart (แทน Hashrate)
+                spmChart.data.labels = labels;
+                spmChart.data.datasets[0].data = history.map(h => h.spm || 0);
+                spmChart.update('none');
                 
                 // Balance Chart
                 balanceChart.data.labels = labels;
@@ -371,7 +359,7 @@
                 
             } catch (e) { 
                 console.error('Charts error:', e);
-                document.getElementById('chart-hr-info').textContent = 'Error loading data';
+                document.getElementById('chart-spm-info').textContent = 'Error loading data';
                 document.getElementById('chart-bal-info').textContent = 'Error loading data';
             }
         }
@@ -404,19 +392,16 @@
             } catch (e) { console.error('Config error:', e); }
         }
 
-        // Initial load
-        console.log('Starting zpool Monitor...');
         updateStats();
         updateWorkers();
         updatePayments();
         updateCharts();
         updateAlertStatus();
 
-        // Auto refresh
-        setInterval(updateStats, 10000);      // 10s
-        setInterval(updateWorkers, 30000);    // 30s
-        setInterval(updatePayments, 300000);  // 5min
-        setInterval(updateCharts, 10000);     // 10s
+        setInterval(updateStats, 10000);
+        setInterval(updateWorkers, 30000);
+        setInterval(updatePayments, 300000);
+        setInterval(updateCharts, 10000);
     </script>
 </body>
 </html>
