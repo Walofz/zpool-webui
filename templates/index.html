@@ -133,7 +133,7 @@
                         <span id="total-paid-detail" class="font-mono">-</span>
                     </div>
                     <div class="flex justify-between py-2 border-b border-gray-800">
-                        <span class="text-gray-400">Estimate (24h)</span>
+                        <span class="text-gray-400">Actual 24h</span>
                         <span id="estimate" class="font-mono text-green-400">-</span>
                     </div>
                     <div class="flex justify-between py-2">
@@ -152,14 +152,13 @@
 
         <!-- Footer -->
         <div class="text-center text-xs text-gray-500 pb-4">
-            zpool Monitor v1.7.1 • Auto-refresh: <span id="refresh-interval">60</span>s
+            zpool Monitor v1.9.0 • Auto-refresh: <span id="refresh-interval">60</span>s
         </div>
     </div>
 
     <script>
-        // ✅ ✅ ✅ แก้ปัญหา AM/PM ถาวร: คำนวณเวลา UTC+7 แบบ Manual 100% ✅ ✅ ✅
+        // ✅ คำนวณเวลา UTC+7 แบบ Manual (ไม่มี AM/PM)
         function getBangkokTime(date) {
-            // แปลงเป็น UTC ก่อน แล้วบวก 7 ชั่วโมง
             const utc = date.getTime() + (date.getTimezoneOffset() * 60000);
             return new Date(utc + (3600000 * 7));
         }

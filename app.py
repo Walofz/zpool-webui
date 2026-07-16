@@ -63,7 +63,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.7.0")
+app = FastAPI(title="zpool Monitor", version="1.9.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -74,7 +74,7 @@ state = {
     "max_spm": 0,
     "last_alert_sent": {},
     "history": [],
-    "start_time": datetime.utcnow()
+    "start_time": datetime.now()  # ✅ ใช้ datetime.now() ธรรมดา (Docker set TZ แล้ว)
 }
 
 ZPOOL_API = "https://www.zpool.ca/api"
@@ -99,9 +99,11 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
+        # ✅ DEBUG: Log root keys ให้เห็นชัดๆ ว่า API ส่งอะไรมาบ้าง
+        logger.info(f"API Root keys: {list(data.keys())}")
+        
         miners = data.get("miners", [])
         
-        # ✅ คำนวณ Total SPM จากทุก workers
         total_spm = 0.0
         workers_dict = {}
         
@@ -121,15 +123,10 @@ async def fetch_zpool_stats() -> dict:
                     "alive": spm > 0
                 })
         
-        # ✅ ดึง Estimate จาก API
-        estimate_24h = (
-            float(data.get("estimate", 0)) or
-            float(data.get("estimate_24h", 0)) or
-            float(data.get("est_24h", 0)) or
-            0
-        )
+        # ✅ Estimate: zpool.ca API ไม่มี field 'estimate' ใน /walletEX
+        # ใช้ paid24h (เหรียญที่ได้รับจริงใน 24 ชม.) แทน ซึ่งแม่นยำกว่า
+        paid24h = float(data.get("paid24h", 0))
         
-        # Read currency from API
         currency = (
             data.get("currency") or 
             data.get("coin") or 
@@ -152,11 +149,11 @@ async def fetch_zpool_stats() -> dict:
             "unsold": float(data.get("unsold", 0)),
             "balance": float(data.get("balance", 0)),
             "unpaid": float(data.get("unpaid", 0)),
-            "paid24h": float(data.get("paid24h", 0)),
+            "paid24h": paid24h,
             "total_paid": float(data.get("total", 0)),
             "spm": total_spm,
             "worker": worker_count,
-            "estimate": estimate_24h,
+            "estimate": paid24h,  # ✅ ใช้ paid24h เป็น estimate (ของจริงใน 24 ชม.)
             "workers_raw": workers_dict,
             "payouts": payouts
         }
@@ -173,7 +170,7 @@ async def send_discord(title: str, message: str, color: int = 15158332):
             "title": title.strip(),
             "description": message.strip(),
             "color": color,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now().isoformat(),  # ✅ ใช้ datetime.now()
             "footer": {"text": "zpool Monitor"}
         }]
     }
@@ -221,7 +218,7 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
 
 
 async def send_alert(title: str, message: str, alert_type: str = "warning"):
-    now = datetime.utcnow().timestamp()
+    now = datetime.now().timestamp()  # ✅ ใช้ datetime.now()
     last = state["last_alert_sent"].get(alert_type, 0)
     if now - last < 300:
         return
@@ -253,7 +250,6 @@ async def check_alerts(stats: dict):
             "info"
         )
     
-    # ✅ Alert เมื่อ SPM ลดลง
     spm = stats.get("spm", 0)
     if state["max_spm"] > 0:
         drop_percent = ((state["max_spm"] - spm) / state["max_spm"]) * 100
@@ -275,13 +271,11 @@ async def background_poller():
             state["workers"] = stats.get("workers_raw", {})
             state["payments"] = stats.get("payouts", [])
             
-            # อัปเดต Max SPM
             if stats["spm"] > state["max_spm"]:
                 state["max_spm"] = stats["spm"]
             
-            # ✅ เก็บ History เฉพาะ SPM และ Balance
             state["history"].append({
-                "time": datetime.utcnow().isoformat(),
+                "time": datetime.now().isoformat(),  # ✅ ใช้ datetime.now()
                 "spm": stats["spm"],
                 "balance": stats["balance"],
                 "workers": stats["worker"]
@@ -310,7 +304,7 @@ async def index(request: Request):
 
 @app.get("/health")
 async def health():
-    return {"status": "healthy", "uptime": (datetime.utcnow() - state["start_time"]).seconds}
+    return {"status": "healthy", "uptime": int((datetime.now() - state["start_time"]).total_seconds())}
 
 
 @app.get("/api/stats")
@@ -320,7 +314,7 @@ async def api_stats():
     return {
         **state["stats"],
         "max_spm": state["max_spm"],
-        "last_update": datetime.utcnow().isoformat()
+        "last_update": datetime.now().isoformat()  # ✅ ใช้ datetime.now()
     }
 
 

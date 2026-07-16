@@ -1,10 +1,11 @@
 FROM python:3.11-slim
 
-# ✅ ตั้งค่า locale และ encoding ให้เป็น UTF-8
-ENV LANG=C.UTF-8
-ENV LC_ALL=C.UTF-8
-ENV PYTHONIOENCODING=utf-8
-ENV PYTHONUTF8=1
+# ✅ ตั้งค่า Timezone เป็น Asia/Bangkok
+ENV TZ=Asia/Bangkok
+RUN apt-get update && apt-get install -y tzdata && \
+    ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && \
+    echo $TZ > /etc/timezone && \
+    rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
 
