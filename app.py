@@ -16,7 +16,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ✅ ฟังก์ชันแปลงค่าเป็น float แบบปลอดภัย (รองรับ dict/list จาก API)
+# Helper: แปลงค่าเป็น float แบบปลอดภัย
 def safe_float(val, default=0.0):
     try:
         if isinstance(val, (int, float)):
@@ -24,7 +24,6 @@ def safe_float(val, default=0.0):
         if isinstance(val, str):
             return float(val)
         if isinstance(val, dict):
-            # ถ้า API ส่งมาเป็น dict (เช่น total_hashrates: {"sha256": 123}) ให้รวมค่าทั้งหมด
             return sum(safe_float(v) for v in val.values())
         if isinstance(val, list):
             return sum(safe_float(v) for v in val)
@@ -115,7 +114,6 @@ async def fetch_zpool_stats() -> dict:
         r.raise_for_status()
         data = r.json()
         
-        # ✅ ใช้ safe_float แทน float() ตรงๆ ป้องกัน API ส่ง list/dict มา
         real_hashrate = safe_float(data.get("total_hashrates", 0))
         real_total_paid = safe_float(data.get("paidtotal", 0))
         
@@ -140,10 +138,7 @@ async def fetch_zpool_stats() -> dict:
                     "alive": spm > 0
                 })
         
-        currency = (
-            data.get("currency") or "BTC"
-        ).upper()
-        
+        currency = (data.get("currency") or "BTC").upper()
         payouts = data.get("payouts", [])
         worker_count = sum(len(v) for v in workers_dict.values())
         
@@ -200,13 +195,11 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
         return
 
     safe_title = str(title).strip().encode('ascii', 'ignore').decode('ascii')
-
     headers = {
         "Title": safe_title,
         "Priority": str(priority),
         "Tags": "warning" if priority >= 4 else "info"
     }
-
     auth_tuple = (user, password) if user and password else None
 
     try:
@@ -273,7 +266,6 @@ async def background_poller():
         try:
             stats = await fetch_zpool_stats()
             state["stats"] = stats
-            
             state["workers"] = stats.get("workers_raw", {})
             state["payments"] = stats.get("payouts", [])
             
