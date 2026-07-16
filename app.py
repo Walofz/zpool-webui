@@ -61,7 +61,7 @@ logger.info(f"   Refresh: {config['refresh_interval']}s")
 logger.info(f"   Discord: {'enabled' if config['notifications']['discord']['enabled'] else 'disabled'}")
 logger.info(f"   ntfy: {'enabled' if config['notifications']['ntfy']['enabled'] else 'disabled'}")
 
-app = FastAPI(title="zpool Monitor", version="1.0.0")
+app = FastAPI(title="zpool Monitor", version="1.1.0")
 templates = Jinja2Templates(directory="templates")
 
 # State
@@ -76,37 +76,59 @@ state = {
     "start_time": datetime.utcnow()
 }
 
-ZPOOL_API = "https://zpool.ca/api"
+ZPOOL_API = "https://www.zpool.ca/api"
+
+# Browser-like headers to bypass Cloudflare basic checks
+HEADERS = {
+    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "Accept": "application/json"
+}
 
 
 async def fetch_zpool_stats() -> dict:
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{ZPOOL_API}/public", params={"address": config["wallet"]})
-        r.raise_for_status()
-        return r.json()
-
-
-async def fetch_worker_details() -> dict:
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{ZPOOL_API}/user", params={"address": config["wallet"]})
-        r.raise_for_status()
-        return r.json()
-
-
-async def fetch_payment_history() -> list:
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{ZPOOL_API}/wallet", params={"address": config["wallet"]})
+    """ดึงข้อมูลหลักจาก walletEX (endpoint ที่ถูกต้องของ zpool.ca)"""
+    async with httpx.AsyncClient(timeout=10, headers=HEADERS) as client:
+        url = f"{ZPOOL_API}/walletEX"
+        params = {"address": config["wallet"]}
+        r = await client.get(url, params=params)
+        
+        # ตรวจสอบว่าเป็น JSON จริงๆ หรือไม่ (ป้องกัน Cloudflare HTML block)
+        content_type = r.headers.get("content-type", "")
+        if "application/json" not in content_type:
+            logger.error(f"❌ API did not return JSON! Content-Type: {content_type}")
+            logger.error(f"Response text: {r.text[:500]}")
+            raise ValueError(f"Expected JSON, got {content_type}")
+            
         r.raise_for_status()
         data = r.json()
-        return data.get("payments", [])[:10]
+        
+        miners = data.get("miners", [])
+        worker_count = len(miners)
+        
+        return {
+            "currency": "BTC",  # zpool จ่ายเป็น BTC โดย default
+            "address": config["wallet"],
+            "unsold": float(data.get("unsold", 0)),
+            "balance": float(data.get("balance", 0)),
+            "unpaid": float(data.get("unpaid", 0)),
+            "paid24h": float(data.get("paid24h", 0)),
+            "total_paid": float(data.get("total", 0)),
+            "hashrate": 0,  # zpool wallet API ไม่ค่อย return hashrate ของ user โดยตรง
+            "worker": worker_count,
+            "estimate": 0,
+            "miners": miners,
+            "payouts": data.get("payouts", [])
+        }
 
 
 async def fetch_blocks_found() -> list:
-    async with httpx.AsyncClient(timeout=10) as client:
-        r = await client.get(f"{ZPOOL_API}/blocks", params={"address": config["wallet"]})
+    """ดึงประวัติ blocks"""
+    async with httpx.AsyncClient(timeout=10, headers=HEADERS) as client:
+        r = await client.get(f"{ZPOOL_API}/blocks")
+        if "application/json" not in r.headers.get("content-type", ""):
+            return []
         r.raise_for_status()
         data = r.json()
-        # API อาจ return dict หรือ list แล้วแต่ endpoint
         if isinstance(data, dict):
             return data.get("blocks", [])[:20]
         return data[:20] if isinstance(data, list) else []
@@ -130,9 +152,9 @@ async def send_discord(title: str, message: str, color: int = 15158332):
     try:
         async with httpx.AsyncClient() as client:
             await client.post(webhook_url, json=payload, timeout=10)
-        logger.info(f"Discord sent: {title}")
+        logger.info(f"✅ Discord sent: {title}")
     except Exception as e:
-        logger.error(f"Discord error: {e}")
+        logger.error(f"❌ Discord error: {e}")
 
 
 async def send_ntfy(title: str, message: str, priority: int = 3):
@@ -150,9 +172,9 @@ async def send_ntfy(title: str, message: str, priority: int = 3):
     try:
         async with httpx.AsyncClient() as client:
             await client.post(f"{server}/{topic}", data=message.encode('utf-8'), headers=headers, timeout=10)
-        logger.info(f"ntfy sent: {title}")
+        logger.info(f"✅ ntfy sent: {title}")
     except Exception as e:
-        logger.error(f"ntfy error: {e}")
+        logger.error(f"❌ ntfy error: {e}")
 
 
 async def send_alert(title: str, message: str, alert_type: str = "warning"):
@@ -187,21 +209,6 @@ async def check_alerts(stats: dict):
             f"Balance: {balance:.8f} {currency}\nเป้าหมาย: {alerts_cfg['min_balance']} {currency}",
             "info"
         )
-    
-    hashrate = stats.get("hashrate", 0)
-    if state["max_hashrate"] > 0:
-        drop_percent = ((state["max_hashrate"] - hashrate) / state["max_hashrate"]) * 100
-        if drop_percent >= alerts_cfg["hashrate_drop_percent"]:
-            await send_alert(
-                "📉 Hashrate Dropped",
-                f"Hashrate ลดลง {drop_percent:.1f}%\n"
-                f"ปัจจุบัน: {hashrate:,} H/s\n"
-                f"สูงสุด: {state['max_hashrate']:,} H/s",
-                "warning"
-            )
-    
-    if hashrate > state["max_hashrate"]:
-        state["max_hashrate"] = hashrate
 
 
 async def background_poller():
@@ -211,15 +218,9 @@ async def background_poller():
             stats = await fetch_zpool_stats()
             state["stats"] = stats
             
-            try:
-                state["workers"] = await fetch_worker_details()
-            except Exception as e:
-                logger.error(f"Workers error: {e}")
-            
-            try:
-                state["payments"] = await fetch_payment_history()
-            except Exception as e:
-                logger.error(f"Payments error: {e}")
+            # Map miners to workers format for frontend
+            state["workers"] = {"SHA-256": stats.get("miners", [])}
+            state["payments"] = stats.get("payouts", [])
             
             try:
                 state["blocks"] = await fetch_blocks_found()
@@ -235,10 +236,10 @@ async def background_poller():
             state["history"] = state["history"][-100:]
             
             await check_alerts(stats)
-            logger.info(f"Updated: balance={stats.get('balance')}, workers={stats.get('worker')}")
+            logger.info(f"✅ Updated: balance={stats.get('balance')}, workers={stats.get('worker')}")
             
         except Exception as e:
-            logger.error(f"Polling error: {e}")
+            logger.error(f"❌ Polling error: {e}")
         
         await asyncio.sleep(config["refresh_interval"])
 
