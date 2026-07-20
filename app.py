@@ -48,7 +48,7 @@ config = {
     "alerts": {
         "worker_offline": get_env("ALERT_WORKER_OFFLINE", True, bool),
         "payment_alert": get_env("ALERT_ON_PAYMENT", True, bool),
-        "hashrate_drop_percent": get_env("HASHRATE_DROP_PERCENT", 50, float),
+        "hashrate_drop_percent": get_env("ALERT_HASHRATE_DROP_PERCENT", 50, float),
     },
     "notifications": {
         "discord": {
