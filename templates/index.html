@@ -537,32 +537,54 @@
 
           notificationChannels.innerHTML = channelsHtml;
 
-          // ฝั่งขวา: Alert Settings
-          let settingsHtml = "";
-          settingsHtml += `<div class="flex items-center justify-between p-3 bg-blue-500/10 border border-blue-500/20 rounded">
+        // ฝั่งขวา: Alert Settings
+        let settingsHtml = '';
+        
+        // Worker Offline
+        const workerOfflineClass = cfg.alerts.worker_offline 
+            ? 'bg-green-500/10 border-green-500/20' 
+            : 'bg-gray-500/10 border-gray-500/20';
+        const workerOfflineText = cfg.alerts.worker_offline ? 'Active' : 'Off';
+        const workerOfflineTextColor = cfg.alerts.worker_offline ? 'text-green-400' : 'text-gray-500';
+        
+        settingsHtml += `<div class="flex items-center justify-between p-3 ${workerOfflineClass} border rounded">
             <div>
                 <div class="font-medium text-sm">Worker Offline</div>
-                <div class="text-xs text-blue-400">${cfg.alerts.worker_offline ? "Active" : "Off"}</div>
+                <div class="text-xs ${workerOfflineTextColor}">${workerOfflineText}</div>
             </div>
         </div>`;
-
-          settingsHtml += `<div class="flex items-center justify-between p-3 bg-blue-500/10 border border-blue-500/20 rounded">
+        
+        // Payment Alert
+        const paymentAlertClass = cfg.alerts.payment_alert 
+            ? 'bg-green-500/10 border-green-500/20' 
+            : 'bg-gray-500/10 border-gray-500/20';
+        const paymentAlertText = cfg.alerts.payment_alert ? 'Active' : 'Off';
+        const paymentAlertTextColor = cfg.alerts.payment_alert ? 'text-green-400' : 'text-gray-500';
+        
+        settingsHtml += `<div class="flex items-center justify-between p-3 ${paymentAlertClass} border rounded">
             <div>
                 <div class="font-medium text-sm">Payment Alert</div>
-                <div class="text-xs text-blue-400">${cfg.alerts.payment_alert ? "Active" : "Off"}</div>
+                <div class="text-xs ${paymentAlertTextColor}">${paymentAlertText}</div>
             </div>
         </div>`;
-
-          const hrDrop = cfg.alerts.hashrate_drop_percent || 0;
-          const hrDropText = hrDrop > 0 ? `>= ${hrDrop}%` : "Off";
-          settingsHtml += `<div class="flex items-center justify-between p-3 bg-blue-500/10 border border-blue-500/20 rounded">
+        
+        // Hashrate Drop
+        const hrDrop = cfg.alerts.hashrate_drop_percent || 0;
+        const hrDropActive = hrDrop > 0;
+        const hrDropClass = hrDropActive 
+            ? 'bg-green-500/10 border-green-500/20' 
+            : 'bg-gray-500/10 border-gray-500/20';
+        const hrDropText = hrDropActive ? `>= ${hrDrop}%` : 'Off';
+        const hrDropTextColor = hrDropActive ? 'text-green-400' : 'text-gray-500';
+        
+        settingsHtml += `<div class="flex items-center justify-between p-3 ${hrDropClass} border rounded">
             <div>
                 <div class="font-medium text-sm">Hashrate Drop</div>
-                <div class="text-xs text-blue-400">${hrDropText}</div>
+                <div class="text-xs ${hrDropTextColor}">${hrDropText}</div>
             </div>
         </div>`;
-
-          alertSettings.innerHTML = settingsHtml;
+        
+        alertSettings.innerHTML = settingsHtml;
         } catch (e) {
           console.error("Config error:", e);
         }
