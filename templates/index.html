@@ -372,6 +372,12 @@
                     <div>ntfy</div><div class="text-xs ${cfg.notifications.ntfy.enabled ? 'text-green-400' : 'text-gray-500'}">${cfg.notifications.ntfy.enabled ? 'Enabled' : 'Disabled'}</div></div>`;
                 html += `<div class="p-2 bg-blue-500/10 rounded"><div>Worker Offline</div><div class="text-xs text-blue-400">${cfg.alerts.worker_offline ? 'Active' : 'Off'}</div></div>`;
                 html += `<div class="p-2 bg-blue-500/10 rounded"><div>Payment Alert</div><div class="text-xs text-blue-400">${cfg.alerts.payment_alert ? 'Active' : 'Off'}</div></div>`;
+                
+                // ✅ เพิ่มส่วน Hashrate Drop แบบตัวเลข
+                const hrDrop = cfg.alerts.hashrate_drop_percent || 0;
+                const hrDropText = hrDrop > 0 ? `>= ${hrDrop}%` : 'Off';
+                html += `<div class="p-2 bg-blue-500/10 rounded"><div>Hashrate Drop</div><div class="text-xs text-blue-400">${hrDropText}</div></div>`;
+                
                 el.innerHTML = html;
             } catch (e) { console.error('Config error:', e); }
         }

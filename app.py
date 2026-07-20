@@ -273,15 +273,17 @@ async def check_alerts(stats: dict):
                 state["last_payment_time"] = latest_time
     
     # 3. Hashrate Dropped
-    hr = stats.get("hashrate", 0)
-    if state["max_hashrate"] > 0 and hr > 0:
-        drop_percent = ((state["max_hashrate"] - hr) / state["max_hashrate"]) * 100
-        if drop_percent >= alerts_cfg["hashrate_drop_percent"]:
-            await send_alert(
-                "WARNING: Hashrate Dropped",
-                f"Hashrate dropped {drop_percent:.1f}%\nCurrent: {hr:.2f}\nMax: {state['max_hashrate']:.2f}",
-                "warning"
-            )
+    drop_threshold = alerts_cfg.get("hashrate_drop_percent", 50)
+    if drop_threshold > 0:
+        hr = stats.get("hashrate", 0)
+        if state["max_hashrate"] > 0 and hr > 0:
+            drop_percent = ((state["max_hashrate"] - hr) / state["max_hashrate"]) * 100
+            if drop_percent >= drop_threshold:
+                await send_alert(
+                    "WARNING: Hashrate Dropped",
+                    f"Hashrate dropped {drop_percent:.1f}%\nCurrent: {hr:.2f}\nMax: {state['max_hashrate']:.2f}",
+                    "warning"
+                )
 
 
 async def background_poller():
